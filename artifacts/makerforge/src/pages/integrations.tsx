@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef } from "react";
 import {
   useGitHubStatus, useGitHubDisconnect, useGitHubPush,
-  useOctoPrintCredentials, useOctoPrintConnect, useOctoPrintDisconnect,
-  useSearchMakerspaces, getOctoPrintCredentialsQueryKey,
+  useOctoPrintStatus, useOctoPrintUpload, useOctoPrintStartPrint,
+  useOctoPrintConnect, useOctoPrintDisconnect,
+  useSearchMakerspaces,
+  getGitHubStatusQueryKey, getOctoPrintStatusQueryKey,
 } from "@workspace/api-client-react";
 import { useListProjects } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,24 +16,15 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Github, Printer, Download, MapPin, CheckCircle, AlertCircle, ExternalLink,
-  Loader2, Globe, Cpu, ArrowRight, WifiOff,
+  Github, Printer, Download, MapPin, CheckCircle, ExternalLink,
+  Loader2, Globe, Cpu, ArrowRight,
 } from "lucide-react";
-import { getGitHubStatusQueryKey } from "@workspace/api-client-react";
-
-interface OpLiveStatus {
-  connected: boolean;
-  version?: string;
-  job?: any;
-  files?: string[];
-  error?: string;
-}
 
 export default function IntegrationHub() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // GitHub state
+  // ── GitHub ──────────────────────────────────────────────────────────────────
   const { data: ghStatus, isLoading: ghLoading } = useGitHubStatus();
   const ghDisconnect = useGitHubDisconnect({
     mutation: {
@@ -54,112 +47,50 @@ export default function IntegrationHub() {
     },
   });
 
-  // ── OctoPrint — client-side architecture ────────────────────────────────────
-  // The server stores encrypted credentials and returns them to the authenticated
-  // user. The browser then calls OctoPrint directly — no server-side proxy, no SSRF.
-  const { data: opCreds, isLoading: opCredsLoading } = useOctoPrintCredentials();
-  const [opLiveStatus, setOpLiveStatus] = useState<OpLiveStatus | null>(null);
-  const [opPolling, setOpPolling] = useState(false);
-  const [opUploadPending, setOpUploadPending] = useState(false);
-  const [opPrinting, setOpPrinting] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
+  // ── OctoPrint ───────────────────────────────────────────────────────────────
+  // All requests routed through server-side authenticated endpoints.
+  // API key is stored AES-256-GCM encrypted and never sent to the browser.
+  const { data: opStatus, isLoading: opLoading } = useOctoPrintStatus();
   const [opUrl, setOpUrl] = useState("");
   const [opKey, setOpKey] = useState("");
-
-  // Browser-side OctoPrint polling — runs entirely client→printer, no server proxy
-  const pollOctoPrint = useCallback(async (creds: { octoprintUrl: string; apiKey: string }) => {
-    try {
-      const headers = { "X-Api-Key": creds.apiKey };
-      const [verRes, jobRes, filesRes] = await Promise.all([
-        fetch(`${creds.octoprintUrl}/api/version`, { headers }).catch(() => null),
-        fetch(`${creds.octoprintUrl}/api/job`, { headers }).catch(() => null),
-        fetch(`${creds.octoprintUrl}/api/files`, { headers }).catch(() => null),
-      ]);
-      const ver = verRes?.ok ? await verRes.json().catch(() => null) : null;
-      const job = jobRes?.ok ? await jobRes.json().catch(() => null) : null;
-      const filesData = filesRes?.ok ? await filesRes.json().catch(() => null) : null;
-      setOpLiveStatus({
-        connected: !!ver,
-        version: ver?.server,
-        job,
-        files: (filesData?.files ?? []).map((f: any) => f.name).filter(Boolean),
-      });
-    } catch {
-      setOpLiveStatus({ connected: false, error: "Could not reach OctoPrint" });
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!opCreds) { setOpLiveStatus(null); return; }
-    setOpPolling(true);
-    pollOctoPrint(opCreds);
-    const interval = setInterval(() => pollOctoPrint(opCreds), 5000);
-    return () => { clearInterval(interval); setOpPolling(false); };
-  }, [opCreds, pollOctoPrint]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const opConnect = useOctoPrintConnect({
     mutation: {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getOctoPrintCredentialsQueryKey() });
-        toast({ title: "OctoPrint credentials saved!", description: "Your browser will now connect directly to OctoPrint." });
+        queryClient.invalidateQueries({ queryKey: getOctoPrintStatusQueryKey() });
+        toast({ title: "OctoPrint connected!" });
         setOpUrl(""); setOpKey("");
       },
-      onError: (e: any) => toast({ title: "Invalid URL", description: e?.data?.error ?? "Check URL format", variant: "destructive" }),
+      onError: (e: any) => toast({ title: "Connection failed", description: e?.data?.error ?? "Check URL and API key", variant: "destructive" }),
     },
   });
 
   const opDisconnect = useOctoPrintDisconnect({
     mutation: {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getOctoPrintCredentialsQueryKey() });
-        setOpLiveStatus(null);
+        queryClient.invalidateQueries({ queryKey: getOctoPrintStatusQueryKey() });
         toast({ title: "OctoPrint disconnected" });
       },
     },
   });
 
-  // Direct browser → OctoPrint file upload (no server-side proxy)
-  const handleOpUpload = async (file: File) => {
-    if (!opCreds) return;
-    setOpUploadPending(true);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("print", "false");
-      const res = await fetch(`${opCreds.octoprintUrl}/api/files/local`, {
-        method: "POST",
-        headers: { "X-Api-Key": opCreds.apiKey },
-        body: form,
-      });
-      if (!res.ok) throw new Error("Upload rejected");
-      toast({ title: "File uploaded to OctoPrint!" });
-      pollOctoPrint(opCreds);
-    } catch {
-      toast({ title: "Upload failed", description: "Ensure OctoPrint allows CORS from this origin.", variant: "destructive" });
-    } finally {
-      setOpUploadPending(false);
-    }
-  };
+  const opUpload = useOctoPrintUpload({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getOctoPrintStatusQueryKey() });
+        toast({ title: "File uploaded to OctoPrint!" });
+      },
+      onError: () => toast({ title: "Upload failed", variant: "destructive" }),
+    },
+  });
 
-  // Direct browser → OctoPrint start-print (no server-side proxy)
-  const handleOpStartPrint = async (filename: string) => {
-    if (!opCreds) return;
-    setOpPrinting(filename);
-    try {
-      const res = await fetch(`${opCreds.octoprintUrl}/api/files/local/${encodeURIComponent(filename)}`, {
-        method: "POST",
-        headers: { "X-Api-Key": opCreds.apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ command: "select", print: true }),
-      });
-      if (!res.ok) throw new Error("Rejected");
-      toast({ title: `Printing ${filename}` });
-    } catch {
-      toast({ title: "Failed to start print", variant: "destructive" });
-    } finally {
-      setOpPrinting(null);
-    }
-  };
+  const opStartPrint = useOctoPrintStartPrint({
+    mutation: {
+      onSuccess: (data) => toast({ title: `Printing ${data.printing}` }),
+      onError: () => toast({ title: "Failed to start print", variant: "destructive" }),
+    },
+  });
 
   // Projects for selector
   const { data: projectsData } = useListProjects({});
@@ -168,8 +99,6 @@ export default function IntegrationHub() {
   const [zip, setZip] = useState("");
   const [searchZip, setSearchZip] = useState("");
   const { data: makerspaces, isLoading: msLoading } = useSearchMakerspaces(searchZip);
-
-  const isOpConnected = !!opCreds;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
@@ -254,34 +183,22 @@ export default function IntegrationHub() {
             <CardTitle className="text-base flex items-center gap-2">
               <Printer className="h-5 w-5" />
               OctoPrint
-              {isOpConnected && opLiveStatus?.connected && (
+              {opStatus?.connected && (
                 <Badge className="ml-auto bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
-                  <CheckCircle className="h-3 w-3 mr-1" />Live v{opLiveStatus.version}
-                </Badge>
-              )}
-              {isOpConnected && opLiveStatus && !opLiveStatus.connected && (
-                <Badge className="ml-auto bg-amber-500/20 text-amber-400 border-amber-500/30">
-                  <WifiOff className="h-3 w-3 mr-1" />Offline
+                  <CheckCircle className="h-3 w-3 mr-1" />Connected v{opStatus.version}
                 </Badge>
               )}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {opCredsLoading ? (
+            {opLoading ? (
               <div className="flex items-center gap-2 text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin" />Checking…</div>
-            ) : !isOpConnected ? (
+            ) : !opStatus?.connected ? (
               <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  Connect your OctoPrint instance. Your browser connects directly to OctoPrint — no cloud proxy.
-                </p>
-                <div className="rounded-lg bg-secondary/20 border border-border/40 p-3 text-xs text-muted-foreground space-y-1">
-                  <p className="font-medium text-foreground">Requirements</p>
-                  <p>• OctoPrint reachable from your browser (LAN or public URL)</p>
-                  <p>• CORS allowed for this app's origin in OctoPrint → Settings → API</p>
-                </div>
+                <p className="text-sm text-muted-foreground">Connect your OctoPrint instance to push STL/GCODE files directly to your printer.</p>
                 <div className="space-y-2">
                   <Label>OctoPrint URL</Label>
-                  <Input placeholder="http://192.168.1.100 or https://my.octoprint.tld" value={opUrl} onChange={(e) => setOpUrl(e.target.value)} />
+                  <Input placeholder="http://192.168.1.100" value={opUrl} onChange={(e) => setOpUrl(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>API Key</Label>
@@ -293,62 +210,60 @@ export default function IntegrationHub() {
                   onClick={() => opConnect.mutate({ octoprintUrl: opUrl, apiKey: opKey })}
                 >
                   {opConnect.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
-                  Save OctoPrint Credentials
+                  Connect OctoPrint
                 </Button>
               </div>
             ) : (
               <div className="space-y-3">
                 <div className="rounded-lg bg-secondary/30 border border-border/50 p-3 space-y-1">
                   <p className="text-xs font-mono text-muted-foreground">Host</p>
-                  <p className="text-sm text-foreground font-medium">{opCreds.octoprintUrl}</p>
+                  <p className="text-sm text-foreground font-medium">{opStatus.octoprintUrl}</p>
                 </div>
-
-                {/* Live job status */}
-                {opLiveStatus?.job?.job?.file?.name && (
+                {Boolean(opStatus.job) && (
                   <div className="rounded-lg bg-secondary/30 border border-border/50 p-3">
                     <p className="text-xs font-mono text-muted-foreground mb-1">Current Job</p>
-                    <p className="text-sm text-foreground">{opLiveStatus.job.job.file.name}</p>
-                    {opLiveStatus.job.progress?.completion != null && (
-                      <p className="text-xs text-muted-foreground mt-1">{opLiveStatus.job.progress.completion.toFixed(1)}% complete</p>
-                    )}
+                    <pre className="text-xs text-foreground overflow-auto max-h-24">{JSON.stringify(opStatus.job, null, 2)}</pre>
                   </div>
                 )}
-
-                {/* File list with per-file print buttons */}
-                {opLiveStatus?.files && opLiveStatus.files.length > 0 && (
+                {opStatus.files && opStatus.files.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-xs font-mono text-muted-foreground uppercase">Files on printer</p>
                     <div className="rounded-lg border border-border/50 bg-secondary/10 divide-y divide-border/30 max-h-48 overflow-y-auto">
-                      {opLiveStatus.files.map((f) => (
+                      {opStatus.files.map((f) => (
                         <div key={f} className="flex items-center justify-between px-3 py-2">
                           <span className="text-xs text-foreground font-mono truncate flex-1">{f}</span>
                           <Button
                             size="sm"
                             variant="ghost"
                             className="h-6 text-xs ml-2 shrink-0 gap-1"
-                            disabled={opPrinting === f}
-                            onClick={() => handleOpStartPrint(f)}
+                            disabled={opStartPrint.isPending}
+                            onClick={() => opStartPrint.mutate(f)}
                           >
-                            {opPrinting === f ? <Loader2 className="h-3 w-3 animate-spin" /> : <Printer className="h-3 w-3" />}
-                            Print
+                            <Printer className="h-3 w-3" />Print
                           </Button>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-
-                {/* Direct file upload (browser → OctoPrint, no server proxy) */}
+                {/* Direct file upload */}
                 <div className="rounded-lg border border-border/50 bg-secondary/10 p-3 space-y-2">
-                  <p className="text-xs font-mono text-muted-foreground uppercase">Upload File</p>
+                  <p className="text-xs font-mono text-muted-foreground uppercase">Upload File to Printer</p>
+                  <p className="text-xs text-muted-foreground">Upload a GCODE or STL file directly to OctoPrint.</p>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".gcode,.gco,.stl"
+                    accept=".gcode,.stl,.gco"
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) handleOpUpload(file);
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const base64 = (reader.result as string).split(",")[1];
+                        opUpload.mutate({ filename: file.name, content: base64 });
+                      };
+                      reader.readAsDataURL(file);
                       e.target.value = "";
                     }}
                   />
@@ -356,14 +271,13 @@ export default function IntegrationHub() {
                     size="sm"
                     variant="outline"
                     className="w-full gap-1.5 text-xs"
-                    disabled={opUploadPending}
+                    disabled={opUpload.isPending}
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    {opUploadPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                    {opUploadPending ? "Uploading…" : "Choose GCODE / STL file"}
+                    {opUpload.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    {opUpload.isPending ? "Uploading…" : "Choose file to upload"}
                   </Button>
                 </div>
-
                 <Button
                   variant="outline"
                   size="sm"

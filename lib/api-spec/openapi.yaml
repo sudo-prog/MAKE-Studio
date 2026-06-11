@@ -591,7 +591,7 @@ paths:
     post:
       operationId: connectOctoPrint
       tags: [integrations]
-      summary: Connect an OctoPrint instance (saves encrypted API key)
+      summary: Connect an OctoPrint instance (validates URL + connectivity, saves AES-256-GCM encrypted API key)
       security:
         - clerkAuth: []
       requestBody:
@@ -604,14 +604,14 @@ paths:
               properties:
                 octoprintUrl:
                   type: string
-                  description: LAN URL of the OctoPrint instance (e.g. http://192.168.1.100)
+                  description: LAN or public URL of the OctoPrint instance (e.g. http://192.168.1.100). Loopback and cloud-metadata URLs are blocked.
                 apiKey:
                   type: string
       responses:
         "200":
-          description: Connected
+          description: Connected — credentials stored encrypted server-side
         "400":
-          description: Invalid URL (SSRF guard) or unreachable host
+          description: Invalid URL (SSRF guard) or OctoPrint unreachable at provided URL
 
   /integrations/octoprint/status:
     get:
@@ -688,6 +688,24 @@ paths:
                     type: boolean
                   printing:
                     type: string
+
+  /integrations/octoprint/disconnect:
+    post:
+      operationId: disconnectOctoPrint
+      tags: [integrations]
+      summary: Remove stored OctoPrint credentials and disconnect the integration
+      security:
+        - clerkAuth: []
+      responses:
+        "200":
+          description: Disconnected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
 
   /integrations/makerspace-search:
     get:

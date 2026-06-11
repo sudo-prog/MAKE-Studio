@@ -148,27 +148,55 @@ export interface AdminAnalytics {
   clicksBySupplier: { supplier: string; count: number }[];
 }
 
-// ── OctoPrint credentials (client-side proxy architecture) ────────────────────
-// Server returns decrypted credentials; browser calls OctoPrint directly (no SSRF).
+// ── OctoPrint — server-side proxy hooks ──────────────────────────────────────
+// API keys remain server-side only (AES-256-GCM at rest, used in server→OctoPrint
+// requests). The UI calls these authenticated endpoints; no key is ever exposed.
 
-export interface OctoPrintCredentials {
-  octoprintUrl: string;
-  apiKey: string;
+export const getOctoPrintStatus = async (): Promise<OctoPrintStatus> =>
+  customFetch<OctoPrintStatus>("/api/integrations/octoprint/status");
+
+export const getOctoPrintStatusQueryKey = () => ["/api/integrations/octoprint/status"] as const;
+
+export function useOctoPrintStatus<TData = OctoPrintStatus, TError = ErrorType<unknown>>(
+  options?: { query?: UseQueryOptions<OctoPrintStatus, TError, TData> },
+) {
+  return useQuery<OctoPrintStatus, TError, TData>({
+    queryKey: getOctoPrintStatusQueryKey(),
+    queryFn: getOctoPrintStatus,
+    refetchInterval: 5000,
+    ...options?.query,
+  } as UseQueryOptions<OctoPrintStatus, TError, TData>);
 }
 
-export const getOctoPrintCredentials = async (): Promise<OctoPrintCredentials | null> =>
-  customFetch<OctoPrintCredentials | null>("/api/integrations/octoprint/credentials");
+export const octoPrintUpload = async (data: { filename: string; content: string }): Promise<{ ok: boolean; file?: unknown }> =>
+  customFetch("/api/integrations/octoprint/upload", { method: "POST", body: JSON.stringify(data) });
 
-export const getOctoPrintCredentialsQueryKey = () => ["/api/integrations/octoprint/credentials"] as const;
-
-export function useOctoPrintCredentials<TData = OctoPrintCredentials | null, TError = ErrorType<unknown>>(
-  options?: { query?: UseQueryOptions<OctoPrintCredentials | null, TError, TData> },
+export function useOctoPrintUpload<TError = ErrorType<unknown>>(
+  options?: { mutation?: UseMutationOptions<{ ok: boolean; file?: unknown }, TError, { filename: string; content: string }> },
 ) {
-  return useQuery<OctoPrintCredentials | null, TError, TData>({
-    queryKey: getOctoPrintCredentialsQueryKey(),
-    queryFn: getOctoPrintCredentials,
-    ...options?.query,
-  } as UseQueryOptions<OctoPrintCredentials | null, TError, TData>);
+  const mutationFn: MutationFunction<{ ok: boolean; file?: unknown }, { filename: string; content: string }> =
+    (data) => octoPrintUpload(data);
+  return useMutation<{ ok: boolean; file?: unknown }, TError, { filename: string; content: string }>({ mutationFn, ...options?.mutation });
+}
+
+export const octoPrintStartPrint = async (filename: string): Promise<{ ok: boolean; printing: string }> =>
+  customFetch("/api/integrations/octoprint/start-print", { method: "POST", body: JSON.stringify({ filename }) });
+
+export function useOctoPrintStartPrint<TError = ErrorType<unknown>>(
+  options?: { mutation?: UseMutationOptions<{ ok: boolean; printing: string }, TError, string> },
+) {
+  const mutationFn: MutationFunction<{ ok: boolean; printing: string }, string> = (filename) => octoPrintStartPrint(filename);
+  return useMutation<{ ok: boolean; printing: string }, TError, string>({ mutationFn, ...options?.mutation });
+}
+
+export const octoPrintConnect = async (data: { octoprintUrl: string; apiKey: string }): Promise<{ ok: boolean }> =>
+  customFetch("/api/integrations/octoprint/connect", { method: "POST", body: JSON.stringify(data) });
+
+export function useOctoPrintConnect<TError = ErrorType<unknown>>(
+  options?: { mutation?: UseMutationOptions<{ ok: boolean }, TError, { octoprintUrl: string; apiKey: string }> },
+) {
+  const mutationFn: MutationFunction<{ ok: boolean }, { octoprintUrl: string; apiKey: string }> = (data) => octoPrintConnect(data);
+  return useMutation<{ ok: boolean }, TError, { octoprintUrl: string; apiKey: string }>({ mutationFn, ...options?.mutation });
 }
 
 export const octoPrintDisconnectFn = async (): Promise<{ ok: boolean }> =>
@@ -230,44 +258,6 @@ export function useGitHubPush<TError = ErrorType<unknown>>(
 ) {
   const mutationFn: MutationFunction<GitHubPushResult, { projectId: number; repoName?: string; createNew?: boolean }> = (data) => githubPush(data);
   return useMutation<GitHubPushResult, TError, { projectId: number; repoName?: string; createNew?: boolean }>({ mutationFn, ...options?.mutation });
-}
-
-// ── OctoPrint ─────────────────────────────────────────────────────────────────
-
-export const getOctoPrintStatus = async (): Promise<OctoPrintStatus> =>
-  customFetch<OctoPrintStatus>("/api/integrations/octoprint/status");
-
-export const getOctoPrintStatusQueryKey = () => ["/api/integrations/octoprint/status"] as const;
-
-export function useOctoPrintStatus<TData = OctoPrintStatus, TError = ErrorType<unknown>>(
-  options?: { query?: UseQueryOptions<OctoPrintStatus, TError, TData>; request?: RequestInit },
-) {
-  const { query: queryOptions } = options ?? {};
-  return useQuery<OctoPrintStatus, TError, TData>({
-    queryKey: getOctoPrintStatusQueryKey(),
-    queryFn: getOctoPrintStatus,
-    ...queryOptions,
-  } as UseQueryOptions<OctoPrintStatus, TError, TData>);
-}
-
-export const octoprintConnect = async (data: { octoprintUrl: string; apiKey: string }): Promise<{ ok: boolean }> =>
-  customFetch("/api/integrations/octoprint/connect", { method: "POST", body: JSON.stringify(data) });
-
-export function useOctoPrintConnect<TError = ErrorType<unknown>>(
-  options?: { mutation?: UseMutationOptions<{ ok: boolean }, TError, { octoprintUrl: string; apiKey: string }> },
-) {
-  const mutationFn: MutationFunction<{ ok: boolean }, { octoprintUrl: string; apiKey: string }> = (data) => octoprintConnect(data);
-  return useMutation<{ ok: boolean }, TError, { octoprintUrl: string; apiKey: string }>({ mutationFn, ...options?.mutation });
-}
-
-export const octoprintStartPrint = async (filename: string): Promise<{ ok: boolean; printing: string }> =>
-  customFetch("/api/integrations/octoprint/start-print", { method: "POST", body: JSON.stringify({ filename }) });
-
-export function useOctoPrintStartPrint<TError = ErrorType<unknown>>(
-  options?: { mutation?: UseMutationOptions<{ ok: boolean; printing: string }, TError, string> },
-) {
-  const mutationFn: MutationFunction<{ ok: boolean; printing: string }, string> = (filename) => octoprintStartPrint(filename);
-  return useMutation<{ ok: boolean; printing: string }, TError, string>({ mutationFn, ...options?.mutation });
 }
 
 // ── Share Card ────────────────────────────────────────────────────────────────
