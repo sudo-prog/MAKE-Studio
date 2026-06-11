@@ -148,17 +148,37 @@ export interface AdminAnalytics {
   clicksBySupplier: { supplier: string; count: number }[];
 }
 
-// ── OctoPrint upload ──────────────────────────────────────────────────────────
+// ── OctoPrint credentials (client-side proxy architecture) ────────────────────
+// Server returns decrypted credentials; browser calls OctoPrint directly (no SSRF).
 
-export const octoPrintUpload = async (data: { filename: string; content: string }): Promise<{ ok: boolean; file?: unknown }> =>
-  customFetch("/api/integrations/octoprint/upload", { method: "POST", body: JSON.stringify(data) });
+export interface OctoPrintCredentials {
+  octoprintUrl: string;
+  apiKey: string;
+}
 
-export function useOctoPrintUpload<TError = ErrorType<unknown>>(
-  options?: { mutation?: UseMutationOptions<{ ok: boolean; file?: unknown }, TError, { filename: string; content: string }> },
+export const getOctoPrintCredentials = async (): Promise<OctoPrintCredentials | null> =>
+  customFetch<OctoPrintCredentials | null>("/api/integrations/octoprint/credentials");
+
+export const getOctoPrintCredentialsQueryKey = () => ["/api/integrations/octoprint/credentials"] as const;
+
+export function useOctoPrintCredentials<TData = OctoPrintCredentials | null, TError = ErrorType<unknown>>(
+  options?: { query?: UseQueryOptions<OctoPrintCredentials | null, TError, TData> },
 ) {
-  const mutationFn: MutationFunction<{ ok: boolean; file?: unknown }, { filename: string; content: string }> =
-    (data) => octoPrintUpload(data);
-  return useMutation<{ ok: boolean; file?: unknown }, TError, { filename: string; content: string }>({ mutationFn, ...options?.mutation });
+  return useQuery<OctoPrintCredentials | null, TError, TData>({
+    queryKey: getOctoPrintCredentialsQueryKey(),
+    queryFn: getOctoPrintCredentials,
+    ...options?.query,
+  } as UseQueryOptions<OctoPrintCredentials | null, TError, TData>);
+}
+
+export const octoPrintDisconnectFn = async (): Promise<{ ok: boolean }> =>
+  customFetch("/api/integrations/octoprint/disconnect", { method: "POST" });
+
+export function useOctoPrintDisconnect<TError = ErrorType<unknown>>(
+  options?: { mutation?: UseMutationOptions<{ ok: boolean }, TError, void> },
+) {
+  const mutationFn: MutationFunction<{ ok: boolean }, void> = () => octoPrintDisconnectFn();
+  return useMutation<{ ok: boolean }, TError, void>({ mutationFn, ...options?.mutation });
 }
 
 // ── User Settings ─────────────────────────────────────────────────────────────

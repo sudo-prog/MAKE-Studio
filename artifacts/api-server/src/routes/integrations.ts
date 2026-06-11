@@ -295,25 +295,24 @@ router.post("/integrations/github/disconnect", requireDbUser, async (req, res) =
 });
 
 // ── OctoPrint ─────────────────────────────────────────────────────────────────
+//
+// Security architecture: the server NEVER proxies requests to OctoPrint.
+// Instead, credentials (URL + encrypted API key) are stored server-side and
+// returned to the authenticated user, who then communicates with OctoPrint
+// directly from their browser. This eliminates all SSRF exposure.
 
-// POST /api/integrations/octoprint/connect — save IP + API key (encrypted at rest)
+// POST /api/integrations/octoprint/connect — store encrypted credentials (no server-side fetch)
 router.post("/integrations/octoprint/connect", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
     const { octoprintUrl, apiKey } = req.body;
     if (!octoprintUrl || !apiKey) { res.status(400).json({ error: "octoprintUrl and apiKey required" }); return; }
 
-    // SSRF guard — validate before making any server-side request to the user-supplied URL
+    // Static URL validation — ensures scheme/format is sane.
+    // No server-side fetch to the user-supplied host; browser validates connectivity directly.
     const urlCheck = validateOctoPrintUrl(octoprintUrl);
     if (!urlCheck.valid) { res.status(400).json({ error: urlCheck.reason }); return; }
 
-    // Validate connectivity before storing
-    const testRes = await fetch(`${octoprintUrl}/api/version`, {
-      headers: { "X-Api-Key": apiKey },
-    }).catch(() => null);
-    if (!testRes?.ok) { res.status(400).json({ error: "Cannot reach OctoPrint at that URL. Check the URL and API key." }); return; }
-
-    // Encrypt API key before storing
     const encryptedKey = encryptSecret(apiKey);
 
     await db.insert(connectedAccountsTable).values({
@@ -333,116 +332,36 @@ router.post("/integrations/octoprint/connect", requireDbUser, async (req, res) =
   }
 });
 
-// POST /api/integrations/octoprint/upload — send GCODE/STL to OctoPrint
-router.post("/integrations/octoprint/upload", requireDbUser, async (req, res) => {
+// GET /api/integrations/octoprint/credentials — return decrypted URL + API key to authenticated user
+// The browser uses these credentials to call OctoPrint directly, with no server-side proxy.
+router.get("/integrations/octoprint/credentials", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const { filename, content } = req.body;
-    if (!filename || !content) { res.status(400).json({ error: "filename and content required" }); return; }
-
     const [account] = await db.select().from(connectedAccountsTable).where(
       and(eq(connectedAccountsTable.userId, user.id), eq(connectedAccountsTable.provider, "octoprint"))
     ).limit(1);
-    if (!account?.accessToken) { res.status(401).json({ error: "OctoPrint not connected" }); return; }
+    if (!account?.accessToken) { res.json(null); return; }
 
     const meta = JSON.parse(account.metadata ?? "{}");
     const octoprintUrl = meta.octoprintUrl as string;
-    const urlCheck2 = validateOctoPrintUrl(octoprintUrl);
-    if (!urlCheck2.valid) { res.status(400).json({ error: `Stored OctoPrint URL is invalid: ${urlCheck2.reason}` }); return; }
     const apiKey = safeDecrypt(account.accessToken);
-
-    const fileBuffer = Buffer.from(content, "base64");
-    const formData = new FormData();
-    formData.append("file", new Blob([fileBuffer]), filename);
-    formData.append("print", "false");
-
-    const uploadRes = await fetch(`${octoprintUrl}/api/files/local`, {
-      method: "POST",
-      headers: { "X-Api-Key": apiKey },
-      body: formData,
-    });
-    if (!uploadRes.ok) { res.status(400).json({ error: "OctoPrint upload failed" }); return; }
-    const data = await uploadRes.json() as any;
-    res.json({ ok: true, file: data });
+    res.json({ octoprintUrl, apiKey });
   } catch (err) {
-    res.status(500).json({ error: "Failed to upload to OctoPrint" });
+    res.status(500).json({ error: "Failed to get credentials" });
   }
 });
 
-// POST /api/integrations/octoprint/start-print — select file and start printing
-router.post("/integrations/octoprint/start-print", requireDbUser, async (req, res) => {
+// POST /api/integrations/octoprint/disconnect
+router.post("/integrations/octoprint/disconnect", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const { filename } = req.body;
-    if (!filename) { res.status(400).json({ error: "filename required" }); return; }
-
-    const [account] = await db.select().from(connectedAccountsTable).where(
+    await db.delete(connectedAccountsTable).where(
       and(eq(connectedAccountsTable.userId, user.id), eq(connectedAccountsTable.provider, "octoprint"))
-    ).limit(1);
-    if (!account?.accessToken) { res.status(401).json({ error: "OctoPrint not connected" }); return; }
-
-    const meta = JSON.parse(account.metadata ?? "{}");
-    const octoprintUrl = meta.octoprintUrl as string;
-    const urlCheck3 = validateOctoPrintUrl(octoprintUrl);
-    if (!urlCheck3.valid) { res.status(400).json({ error: `Stored OctoPrint URL is invalid: ${urlCheck3.reason}` }); return; }
-    const apiKey = safeDecrypt(account.accessToken);
-    const headers = { "X-Api-Key": apiKey, "Content-Type": "application/json" };
-
-    // Select the file
-    const selectRes = await fetch(`${octoprintUrl}/api/files/local/${filename}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ command: "select", print: true }),
-    });
-    if (!selectRes.ok) {
-      const err = await selectRes.text().catch(() => "");
-      res.status(400).json({ error: `OctoPrint start failed: ${err}` });
-      return;
-    }
-    res.json({ ok: true, printing: filename });
+    );
+    await db.update(usersTable).set({ octoprintConnected: false }).where(eq(usersTable.id, user.id));
+    res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: "Failed to start print" });
-  }
-});
-
-// GET /api/integrations/octoprint/status — job status + printer state
-router.get("/integrations/octoprint/status", requireDbUser, async (req, res) => {
-  try {
-    const user = (req as any).dbUser;
-    const [account] = await db.select().from(connectedAccountsTable).where(
-      and(eq(connectedAccountsTable.userId, user.id), eq(connectedAccountsTable.provider, "octoprint"))
-    ).limit(1);
-    if (!account?.accessToken) { res.json({ connected: false }); return; }
-
-    const meta = JSON.parse(account.metadata ?? "{}");
-    const octoprintUrl = meta.octoprintUrl as string;
-    const urlCheck4 = validateOctoPrintUrl(octoprintUrl);
-    if (!urlCheck4.valid) { res.json({ connected: false, error: urlCheck4.reason }); return; }
-    const apiKey = safeDecrypt(account.accessToken);
-
-    const [versionRes, jobRes, printerRes, filesRes] = await Promise.all([
-      fetch(`${octoprintUrl}/api/version`, { headers: { "X-Api-Key": apiKey } }).catch(() => null),
-      fetch(`${octoprintUrl}/api/job`, { headers: { "X-Api-Key": apiKey } }).catch(() => null),
-      fetch(`${octoprintUrl}/api/printer`, { headers: { "X-Api-Key": apiKey } }).catch(() => null),
-      fetch(`${octoprintUrl}/api/files?recursive=false`, { headers: { "X-Api-Key": apiKey } }).catch(() => null),
-    ]);
-
-    const version = versionRes?.ok ? await versionRes.json() : null;
-    const job = jobRes?.ok ? await jobRes.json() : null;
-    const printer = printerRes?.ok ? await printerRes.json() : null;
-    const filesData = filesRes?.ok ? await filesRes.json() as any : null;
-    const files: string[] = filesData?.files?.map((f: any) => f.name).filter(Boolean) ?? [];
-
-    res.json({
-      connected: !!version,
-      octoprintUrl,
-      version: (version as any)?.server,
-      job,
-      printer,
-      files,
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to get OctoPrint status" });
+    res.status(500).json({ error: "Failed to disconnect OctoPrint" });
   }
 });
 
