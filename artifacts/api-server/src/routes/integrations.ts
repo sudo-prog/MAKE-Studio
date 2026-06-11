@@ -83,6 +83,41 @@ function safeDecrypt(stored: string): string {
   }
 }
 
+// ── SSRF Guard ────────────────────────────────────────────────────────────────
+
+/**
+ * Validate a user-supplied OctoPrint URL before making server-side requests.
+ * Blocks cloud metadata endpoints and localhost while allowing LAN private ranges
+ * (OctoPrint is inherently a local-network device — 192.168.x, 10.x, etc. are valid).
+ */
+function validateOctoPrintUrl(rawUrl: string): { valid: boolean; reason?: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return { valid: false, reason: "Invalid URL format" };
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    return { valid: false, reason: "Only http:// and https:// URLs are allowed" };
+  }
+  const host = parsed.hostname.toLowerCase();
+  // Block AWS/GCP/Azure instance metadata endpoints (SSRF targets)
+  const blockedHosts = ["169.254.169.254", "metadata.google.internal", "metadata.internal", "100.100.100.200"];
+  if (blockedHosts.includes(host)) {
+    return { valid: false, reason: "Cloud metadata endpoints are not allowed" };
+  }
+  // Block loopback — OctoPrint must live on the LAN, not the server itself
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "0.0.0.0") {
+    return { valid: false, reason: "Loopback addresses are not valid OctoPrint hosts" };
+  }
+  // Block link-local beyond the metadata IPs (169.254.x.x range)
+  const linkLocalMatch = host.match(/^169\.254\.(\d+)\.(\d+)$/);
+  if (linkLocalMatch) {
+    return { valid: false, reason: "Link-local addresses are not allowed" };
+  }
+  return { valid: true };
+}
+
 // ── GitHub OAuth ─────────────────────────────────────────────────────────────
 
 // GET /api/integrations/github/connect — redirect to GitHub OAuth
@@ -268,6 +303,10 @@ router.post("/integrations/octoprint/connect", requireDbUser, async (req, res) =
     const { octoprintUrl, apiKey } = req.body;
     if (!octoprintUrl || !apiKey) { res.status(400).json({ error: "octoprintUrl and apiKey required" }); return; }
 
+    // SSRF guard — validate before making any server-side request to the user-supplied URL
+    const urlCheck = validateOctoPrintUrl(octoprintUrl);
+    if (!urlCheck.valid) { res.status(400).json({ error: urlCheck.reason }); return; }
+
     // Validate connectivity before storing
     const testRes = await fetch(`${octoprintUrl}/api/version`, {
       headers: { "X-Api-Key": apiKey },
@@ -308,6 +347,8 @@ router.post("/integrations/octoprint/upload", requireDbUser, async (req, res) =>
 
     const meta = JSON.parse(account.metadata ?? "{}");
     const octoprintUrl = meta.octoprintUrl as string;
+    const urlCheck2 = validateOctoPrintUrl(octoprintUrl);
+    if (!urlCheck2.valid) { res.status(400).json({ error: `Stored OctoPrint URL is invalid: ${urlCheck2.reason}` }); return; }
     const apiKey = safeDecrypt(account.accessToken);
 
     const fileBuffer = Buffer.from(content, "base64");
@@ -342,6 +383,8 @@ router.post("/integrations/octoprint/start-print", requireDbUser, async (req, re
 
     const meta = JSON.parse(account.metadata ?? "{}");
     const octoprintUrl = meta.octoprintUrl as string;
+    const urlCheck3 = validateOctoPrintUrl(octoprintUrl);
+    if (!urlCheck3.valid) { res.status(400).json({ error: `Stored OctoPrint URL is invalid: ${urlCheck3.reason}` }); return; }
     const apiKey = safeDecrypt(account.accessToken);
     const headers = { "X-Api-Key": apiKey, "Content-Type": "application/json" };
 
@@ -373,6 +416,8 @@ router.get("/integrations/octoprint/status", requireDbUser, async (req, res) => 
 
     const meta = JSON.parse(account.metadata ?? "{}");
     const octoprintUrl = meta.octoprintUrl as string;
+    const urlCheck4 = validateOctoPrintUrl(octoprintUrl);
+    if (!urlCheck4.valid) { res.json({ connected: false, error: urlCheck4.reason }); return; }
     const apiKey = safeDecrypt(account.accessToken);
 
     const [versionRes, jobRes, printerRes, filesRes] = await Promise.all([

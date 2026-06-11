@@ -148,6 +148,19 @@ export interface AdminAnalytics {
   clicksBySupplier: { supplier: string; count: number }[];
 }
 
+// ── OctoPrint upload ──────────────────────────────────────────────────────────
+
+export const octoPrintUpload = async (data: { filename: string; content: string }): Promise<{ ok: boolean; file?: unknown }> =>
+  customFetch("/api/integrations/octoprint/upload", { method: "POST", body: JSON.stringify(data) });
+
+export function useOctoPrintUpload<TError = ErrorType<unknown>>(
+  options?: { mutation?: UseMutationOptions<{ ok: boolean; file?: unknown }, TError, { filename: string; content: string }> },
+) {
+  const mutationFn: MutationFunction<{ ok: boolean; file?: unknown }, { filename: string; content: string }> =
+    (data) => octoPrintUpload(data);
+  return useMutation<{ ok: boolean; file?: unknown }, TError, { filename: string; content: string }>({ mutationFn, ...options?.mutation });
+}
+
 // ── User Settings ─────────────────────────────────────────────────────────────
 
 export const patchMe = async (data: { displayName?: string; educationMode?: boolean }): Promise<{ id: number; educationMode?: boolean; displayName?: string }> =>

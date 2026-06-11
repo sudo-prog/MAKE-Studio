@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useGetPublicGallery, getGetPublicGalleryQueryKey, useForkProject } from "@workspace/api-client-react";
 import { useUser } from "@clerk/react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Link, useLocation } from "wouter";
-import { Zap, Eye, GitFork, Search, X, Loader2 } from "lucide-react";
+import { Zap, Eye, GitFork, Search, X, Loader2, Heart, User2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const CATEGORIES = ["All", "Energy", "IoT", "Robotics", "Lighting", "Accessibility", "CNC", "Electronics", "Mechanical"];
@@ -26,14 +26,29 @@ export default function Gallery() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
+  // Accumulated items across pages for infinite scroll
+  const [accumulated, setAccumulated] = useState<any[]>([]);
+  const loaderRef = useRef<HTMLDivElement>(null);
 
   const galleryParams = {
     page,
     ...(category ? { category } : {}),
   };
-  const { data, isLoading } = useGetPublicGallery(galleryParams, {
+  const { data, isLoading, isFetching } = useGetPublicGallery(galleryParams, {
     query: { queryKey: getGetPublicGalleryQueryKey(galleryParams) },
   });
+
+  // Accumulate pages — reset on filter change, append on page increase
+  useEffect(() => {
+    if (!data?.items) return;
+    setAccumulated((prev) => (page === 1 ? data.items : [...prev, ...data.items]));
+  }, [data?.items, page]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+    setAccumulated([]);
+  }, [category, search, skillLevel, material]);
 
   const forkProject = useForkProject({
     mutation: {
@@ -46,8 +61,7 @@ export default function Gallery() {
   });
 
   // Client-side filter by search, skillLevel, and material keywords
-  const allProjects = data?.items ?? [];
-  const projects = allProjects.filter((p) => {
+  const projects = accumulated.filter((p) => {
     const desc = (p as any).description ?? "";
     const matchSearch = !search || p.title?.toLowerCase().includes(search.toLowerCase()) || desc.toLowerCase().includes(search.toLowerCase());
     const matchSkill = !skillLevel || (p as any).skillLevel === skillLevel;
@@ -59,6 +73,7 @@ export default function Gallery() {
   const handleSearch = () => {
     setSearch(searchInput);
     setPage(1);
+    setAccumulated([]);
   };
 
   const clearFilters = () => {
@@ -68,16 +83,18 @@ export default function Gallery() {
     setSearch("");
     setSearchInput("");
     setPage(1);
+    setAccumulated([]);
     queryClient.invalidateQueries({ queryKey: getGetPublicGalleryQueryKey({}) });
   };
 
-  const hasFilters = !!category || !!skillLevel || !!material || !!search;
+  const hasFilters = !!(category || skillLevel || material || search);
+  const hasMore = data?.items && data.items.length >= 20;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">Community Gallery</h1>
-        <p className="text-muted-foreground text-sm mt-1">Browse, remix, and get inspired by community-built projects</p>
+    <div className="p-6 max-w-7xl mx-auto">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-foreground mb-1">Community Gallery</h1>
+        <p className="text-muted-foreground text-sm">Browse, remix, and get inspired by community-built projects</p>
       </div>
 
       {/* Search bar */}
@@ -85,11 +102,11 @@ export default function Gallery() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            className="pl-9"
-            placeholder="Search projects…"
+            placeholder="Search projects..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            className="pl-9"
           />
         </div>
         <Button onClick={handleSearch}>Search</Button>
@@ -105,9 +122,10 @@ export default function Gallery() {
         {CATEGORIES.map((cat) => (
           <Button
             key={cat}
-            variant={category === cat || (cat === "All" && !category) ? "default" : "outline"}
+            variant={category === cat || (cat === "All" && !category) ? "secondary" : "ghost"}
             size="sm"
-            onClick={() => { setCategory(cat === "All" ? undefined : cat); setPage(1); }}
+            className="text-xs h-7"
+            onClick={() => setCategory(cat === "All" ? undefined : cat)}
           >
             {cat}
           </Button>
@@ -116,15 +134,15 @@ export default function Gallery() {
 
       {/* Skill level filter */}
       <div className="flex gap-2 flex-wrap mb-3">
-        {SKILL_LEVELS.map((lvl) => (
+        {SKILL_LEVELS.map((sk) => (
           <Button
-            key={lvl}
-            variant={skillLevel === lvl || (lvl === "All" && !skillLevel) ? "secondary" : "ghost"}
+            key={sk}
+            variant={skillLevel === sk || (sk === "All" && !skillLevel) ? "secondary" : "ghost"}
             size="sm"
             className="text-xs h-7"
-            onClick={() => { setSkillLevel(lvl === "All" ? undefined : lvl); setPage(1); }}
+            onClick={() => setSkillLevel(sk === "All" ? undefined : sk)}
           >
-            {lvl}
+            {sk}
           </Button>
         ))}
       </div>
@@ -138,14 +156,14 @@ export default function Gallery() {
             variant={material === mat || (mat === "All" && !material) ? "secondary" : "ghost"}
             size="sm"
             className="text-xs h-7"
-            onClick={() => { setMaterial(mat === "All" ? undefined : mat); setPage(1); }}
+            onClick={() => { setMaterial(mat === "All" ? undefined : mat); setPage(1); setAccumulated([]); }}
           >
             {mat}
           </Button>
         ))}
       </div>
 
-      {isLoading ? (
+      {isLoading && page === 1 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <Card key={i} className="animate-pulse">
@@ -175,8 +193,9 @@ export default function Gallery() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {projects.map((p) => (
-              <Card key={p.id} className="group hover:border-primary/50 transition-colors overflow-hidden">
-                <div className="h-36 bg-secondary/50 flex items-center justify-center relative overflow-hidden">
+              <Card key={p.id} className="group hover:border-primary/50 transition-colors overflow-hidden flex flex-col">
+                {/* Thumbnail */}
+                <div className="h-36 bg-secondary/50 flex items-center justify-center relative overflow-hidden shrink-0">
                   {(p as any).renderImageUrl ? (
                     <img src={(p as any).renderImageUrl} alt={p.title} className="w-full h-full object-cover" />
                   ) : (
@@ -188,13 +207,40 @@ export default function Gallery() {
                     </Badge>
                   )}
                 </div>
-                <CardContent className="p-3">
+
+                <CardContent className="p-3 flex flex-col flex-1">
                   <h3 className="font-semibold text-sm text-foreground truncate mb-1">{p.title}</h3>
+
+                  {/* Creator */}
+                  {(p as any).creatorDisplayName && (
+                    <div className="flex items-center gap-1 mb-1">
+                      <User2 className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-[11px] text-muted-foreground truncate">{(p as any).creatorDisplayName}</span>
+                    </div>
+                  )}
+
+                  {/* Category + cost */}
                   <div className="flex items-center gap-2 flex-wrap mb-2">
                     {p.category && <Badge variant="outline" className="text-[10px]">{p.category}</Badge>}
                     {p.estimatedCost && <span className="text-xs text-muted-foreground">${p.estimatedCost}</span>}
                   </div>
-                  <div className="flex gap-1.5">
+
+                  {/* Social stats */}
+                  <div className="flex items-center gap-3 mb-2 text-[11px] text-muted-foreground">
+                    {((p as any).likeCount ?? 0) > 0 && (
+                      <span className="flex items-center gap-0.5">
+                        <Heart className="h-3 w-3 fill-rose-500 text-rose-500" />{(p as any).likeCount}
+                      </span>
+                    )}
+                    {((p as any).forkCount ?? 0) > 0 && (
+                      <span className="flex items-center gap-0.5">
+                        <GitFork className="h-3 w-3" />{(p as any).forkCount}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-1.5 mt-auto">
                     <Button variant="ghost" size="sm" className="flex-1 h-7 text-xs" asChild>
                       <Link href={`/share/${(p as any).shareSlug ?? p.id}`}>
                         <Eye className="h-3 w-3 mr-1" />View
@@ -219,9 +265,20 @@ export default function Gallery() {
               </Card>
             ))}
           </div>
-          <div className="flex justify-center gap-2 mt-8">
-            {page > 1 && <Button variant="outline" onClick={() => setPage(p => p - 1)}>Previous</Button>}
-            {data && allProjects.length >= 20 && <Button variant="outline" onClick={() => setPage(p => p + 1)}>Next</Button>}
+
+          {/* Infinite scroll sentinel / load-more */}
+          <div ref={loaderRef} className="flex justify-center mt-8">
+            {hasMore && (
+              <Button
+                variant="outline"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={isFetching}
+                className="min-w-[140px]"
+              >
+                {isFetching ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                {isFetching ? "Loading…" : "Load more"}
+              </Button>
+            )}
           </div>
         </>
       )}

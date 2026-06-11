@@ -462,7 +462,69 @@ router.get("/affiliate/earnings", requireDbUser, async (req, res) => {
   }
 });
 
-// ── SHARE CARD (OG metadata + affiliate highlights) ────────────────────────────
+// ── SHARE CARD (OG metadata + affiliate highlights + SVG image) ───────────────
+
+// GET /api/projects/:id/share-card.svg — rendered social card image
+router.get("/projects/:id/share-card.svg", async (req, res) => {
+  try {
+    const projectId = parseInt(String(req.params.id));
+    const [project] = await db.select({
+      title: projectsTable.title,
+      category: projectsTable.category,
+      skillLevel: projectsTable.skillLevel,
+      estimatedCost: projectsTable.estimatedCost,
+      estimatedTime: projectsTable.estimatedTime,
+      isPublic: projectsTable.isPublic,
+    }).from(projectsTable).where(eq(projectsTable.id, projectId)).limit(1);
+
+    if (!project || !project.isPublic) {
+      res.status(404).send("Not found");
+      return;
+    }
+
+    const title = (project.title ?? "Untitled Project").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const category = (project.category ?? "").replace(/&/g, "&amp;");
+    const skill = (project.skillLevel ?? "").replace(/&/g, "&amp;");
+    const cost = project.estimatedCost ? `$${project.estimatedCost}` : "";
+    const time = project.estimatedTime ?? "";
+
+    const truncatedTitle = title.length > 48 ? title.slice(0, 47) + "…" : title;
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a0a"/>
+      <stop offset="100%" style="stop-color:#111827"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#34d399"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="0" y="0" width="6" height="630" fill="url(#accent)"/>
+  <rect x="60" y="60" width="160" height="36" rx="8" fill="#10b981" opacity="0.15"/>
+  <text x="80" y="84" font-family="system-ui,sans-serif" font-size="18" font-weight="700" fill="#10b981">MakerForge</text>
+  <text x="60" y="200" font-family="system-ui,sans-serif" font-size="64" font-weight="800" fill="#f9fafb" letter-spacing="-2">${truncatedTitle}</text>
+  <line x1="60" y1="240" x2="300" y2="240" stroke="#10b981" stroke-width="3"/>
+  ${category ? `<rect x="60" y="270" width="${category.length * 12 + 24}" height="32" rx="16" fill="#10b981" opacity="0.2"/>
+  <text x="72" y="292" font-family="system-ui,sans-serif" font-size="16" fill="#34d399">${category}</text>` : ""}
+  ${skill ? `<rect x="${category ? category.length * 12 + 24 + 76 : 60}" y="270" width="${skill.length * 11 + 24}" height="32" rx="16" fill="#6366f1" opacity="0.2"/>
+  <text x="${category ? category.length * 12 + 24 + 88 : 72}" y="292" font-family="system-ui,sans-serif" font-size="16" fill="#818cf8">${skill}</text>` : ""}
+  <text x="60" y="520" font-family="system-ui,sans-serif" font-size="22" fill="#9ca3af">AI-powered hardware project builder</text>
+  ${cost ? `<text x="1140" y="520" font-family="system-ui,sans-serif" font-size="28" font-weight="700" fill="#10b981" text-anchor="end">${cost}</text>` : ""}
+  ${time ? `<text x="1140" y="555" font-family="system-ui,sans-serif" font-size="18" fill="#6b7280" text-anchor="end">${time}</text>` : ""}
+  <rect x="60" y="560" width="1080" height="1" fill="#1f2937"/>
+  <text x="60" y="600" font-family="system-ui,sans-serif" font-size="18" fill="#4b5563">makerforge.app</text>
+</svg>`;
+
+    res.setHeader("Content-Type", "image/svg+xml");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.send(svg);
+  } catch (err) {
+    res.status(500).send("Error generating card");
+  }
+});
 
 // GET /api/projects/:id/share-card
 router.get("/projects/:id/share-card", async (req, res) => {
@@ -490,6 +552,8 @@ router.get("/projects/:id/share-card", async (req, res) => {
       affiliateUrl: item.affiliateUrl ?? null,
     }));
 
+    const ogImageUrl = `${process.env.APP_BASE_URL ?? ""}/api/projects/${project.id}/share-card.svg`;
+
     res.json({
       title: project.title,
       description: project.description ?? project.prompt?.slice(0, 200),
@@ -500,7 +564,7 @@ router.get("/projects/:id/share-card", async (req, res) => {
       shareUrl,
       tags: [project.category, project.skillLevel].filter(Boolean),
       affiliateHighlights,
-      ogImageUrl: null, // Placeholder — can be replaced with a real OG image generator
+      ogImageUrl,
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to get share card" });

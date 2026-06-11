@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useGitHubStatus, useGitHubDisconnect, useGitHubPush, useOctoPrintStatus, useOctoPrintConnect, useOctoPrintStartPrint, useSearchMakerspaces } from "@workspace/api-client-react";
+import { useState, useRef } from "react";
+import { useGitHubStatus, useGitHubDisconnect, useGitHubPush, useOctoPrintStatus, useOctoPrintConnect, useOctoPrintStartPrint, useOctoPrintUpload, useSearchMakerspaces } from "@workspace/api-client-react";
 import { useListProjects } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,11 +42,26 @@ export default function IntegrationHub() {
     },
   });
 
-  // OctoPrint state
-  const { data: opStatus, isLoading: opLoading } = useOctoPrintStatus();
+  // OctoPrint state — poll every 5s when connected to get live job status
+  const { data: opStatus, isLoading: opLoading } = useOctoPrintStatus({
+    query: {
+      queryKey: ["/api/integrations/octoprint/status"],
+      refetchInterval: (query) => (query.state.data?.connected ? 5000 : false),
+    },
+  });
   const [opUrl, setOpUrl] = useState("");
   const [opKey, setOpKey] = useState("");
   const [selectedFile, setSelectedFile] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const opUpload = useOctoPrintUpload({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/integrations/octoprint/status"] });
+        toast({ title: "File uploaded to OctoPrint!" });
+      },
+      onError: () => toast({ title: "Upload failed", variant: "destructive" }),
+    },
+  });
   const opStartPrint = useOctoPrintStartPrint({
     mutation: {
       onSuccess: (data) => toast({ title: `Printing ${data.printing}` }),
@@ -218,7 +233,38 @@ export default function IntegrationHub() {
                     </div>
                   </div>
                 )}
-                <p className="text-xs text-muted-foreground">Export your project ZIP to get the GCODE file, then upload via the OctoPrint web UI.</p>
+                {/* Direct file upload */}
+                <div className="rounded-lg border border-border/50 bg-secondary/10 p-3 space-y-2">
+                  <p className="text-xs font-mono text-muted-foreground uppercase">Upload File to Printer</p>
+                  <p className="text-xs text-muted-foreground">Upload a GCODE or STL file directly to OctoPrint.</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".gcode,.stl,.gco"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const base64 = (reader.result as string).split(",")[1];
+                        opUpload.mutate({ filename: file.name, content: base64 });
+                      };
+                      reader.readAsDataURL(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full gap-1.5 text-xs"
+                    disabled={opUpload.isPending}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {opUpload.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    {opUpload.isPending ? "Uploading…" : "Choose file to upload"}
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>

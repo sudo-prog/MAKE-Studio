@@ -26,6 +26,14 @@ tags:
     description: Dashboard summary endpoints
   - name: public
     description: Public/unauthenticated endpoints
+  - name: integrations
+    description: Third-party integration hub (GitHub, OctoPrint, Makerspace)
+  - name: community
+    description: Showcase feed, challenges, gallery, share cards
+  - name: admin
+    description: Admin-only analytics endpoints
+  - name: affiliate
+    description: Affiliate earnings and click tracking
 
 paths:
   /healthz:
@@ -487,6 +495,405 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProjectList"
 
+  # ── INTEGRATIONS ──────────────────────────────────────────────────────────
+  /integrations/github/connect:
+    get:
+      operationId: getGitHubConnect
+      tags: [integrations]
+      summary: Start GitHub OAuth flow (redirects to GitHub)
+      security:
+        - clerkAuth: []
+      responses:
+        "302":
+          description: Redirect to GitHub OAuth
+
+  /integrations/github/callback:
+    get:
+      operationId: getGitHubCallback
+      tags: [integrations]
+      summary: GitHub OAuth callback — exchanges code for token
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to integrations page on success
+        "400":
+          description: Invalid state or code
+
+  /integrations/github/status:
+    get:
+      operationId: getGitHubStatus
+      tags: [integrations]
+      summary: Get GitHub connection status
+      security:
+        - clerkAuth: []
+      responses:
+        "200":
+          description: GitHub status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitHubStatus"
+
+  /integrations/github/disconnect:
+    post:
+      operationId: disconnectGitHub
+      tags: [integrations]
+      summary: Disconnect GitHub integration
+      security:
+        - clerkAuth: []
+      responses:
+        "200":
+          description: Disconnected
+
+  /integrations/github/push:
+    post:
+      operationId: pushToGitHub
+      tags: [integrations]
+      summary: Push project files to a GitHub repository
+      security:
+        - clerkAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId]
+              properties:
+                projectId:
+                  type: integer
+                repoName:
+                  type: string
+                createNew:
+                  type: boolean
+      responses:
+        "200":
+          description: Pushed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  repoUrl:
+                    type: string
+
+  /integrations/octoprint/connect:
+    post:
+      operationId: connectOctoPrint
+      tags: [integrations]
+      summary: Connect an OctoPrint instance (saves encrypted API key)
+      security:
+        - clerkAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [octoprintUrl, apiKey]
+              properties:
+                octoprintUrl:
+                  type: string
+                  description: LAN URL of the OctoPrint instance (e.g. http://192.168.1.100)
+                apiKey:
+                  type: string
+      responses:
+        "200":
+          description: Connected
+        "400":
+          description: Invalid URL (SSRF guard) or unreachable host
+
+  /integrations/octoprint/status:
+    get:
+      operationId: getOctoPrintStatus
+      tags: [integrations]
+      summary: Get OctoPrint connection status, current job, and file list
+      security:
+        - clerkAuth: []
+      responses:
+        "200":
+          description: OctoPrint status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OctoPrintStatus"
+
+  /integrations/octoprint/upload:
+    post:
+      operationId: uploadToOctoPrint
+      tags: [integrations]
+      summary: Upload a GCODE/STL file to OctoPrint (base64 encoded)
+      security:
+        - clerkAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, content]
+              properties:
+                filename:
+                  type: string
+                content:
+                  type: string
+                  description: Base64-encoded file content
+      responses:
+        "200":
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /integrations/octoprint/start-print:
+    post:
+      operationId: startOctoPrint
+      tags: [integrations]
+      summary: Select a file and start printing on OctoPrint
+      security:
+        - clerkAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename]
+              properties:
+                filename:
+                  type: string
+      responses:
+        "200":
+          description: Print started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  printing:
+                    type: string
+
+  /integrations/makerspace-search:
+    get:
+      operationId: searchMakerspaces
+      tags: [integrations]
+      summary: Find nearby makerspaces by ZIP code
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: zip
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Nearby makerspaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  zip:
+                    type: string
+                  spaces:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Makerspace"
+
+  # ── COMMUNITY ─────────────────────────────────────────────────────────────
+  /projects/{id}/share-card:
+    get:
+      operationId: getProjectShareCard
+      tags: [community]
+      summary: Get OG metadata and affiliate highlights for social sharing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Share card metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareCard"
+        "404":
+          description: Project not found or not public
+
+  /projects/{id}/share-card.svg:
+    get:
+      operationId: getProjectShareCardSvg
+      tags: [community]
+      summary: Rendered SVG social card image (1200×630, suitable for og:image)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: SVG image
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+        "404":
+          description: Project not found or not public
+
+  /showcase:
+    get:
+      operationId: getShowcasePosts
+      tags: [community]
+      summary: List showcase posts (community builds feed)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+      responses:
+        "200":
+          description: Showcase posts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ShowcasePost"
+                  total:
+                    type: integer
+    post:
+      operationId: createShowcasePost
+      tags: [community]
+      summary: Share a project to the showcase feed
+      security:
+        - clerkAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId]
+              properties:
+                projectId:
+                  type: integer
+                caption:
+                  type: string
+                imageUrls:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "201":
+          description: Created showcase post
+
+  /showcase/{id}/like:
+    post:
+      operationId: likeShowcasePost
+      tags: [community]
+      summary: Toggle like on a showcase post
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Like toggled
+
+  /challenges:
+    get:
+      operationId: getChallenges
+      tags: [community]
+      summary: List active build challenges
+      responses:
+        "200":
+          description: Challenges list
+
+  /challenges/{id}/submit:
+    post:
+      operationId: submitChallenge
+      tags: [community]
+      summary: Submit a project to a challenge
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId]
+              properties:
+                projectId:
+                  type: integer
+                note:
+                  type: string
+      responses:
+        "201":
+          description: Submitted
+
+  /admin/analytics:
+    get:
+      operationId: getAdminAnalytics
+      tags: [admin]
+      summary: Admin analytics dashboard (admin email required)
+      security:
+        - clerkAuth: []
+      responses:
+        "200":
+          description: Analytics data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAnalytics"
+        "403":
+          description: Admin only
+
+  /affiliate/earnings:
+    get:
+      operationId: getAffiliateEarnings
+      tags: [affiliate]
+      summary: Get affiliate click earnings summary for current user
+      security:
+        - clerkAuth: []
+      responses:
+        "200":
+          description: Affiliate earnings
+
 # ── WEBHOOK (no generated hooks, server-only) ─────────────────────────────
 # POST /stripe/webhook — handled in Express, not in spec (raw body required)
 
@@ -936,6 +1343,146 @@ components:
       properties:
         url:
           type: string
+
+    # ── INTEGRATIONS ────────────────────────────────────────────────────────
+    GitHubStatus:
+      type: object
+      required: [connected]
+      properties:
+        connected:
+          type: boolean
+        login:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+
+    OctoPrintStatus:
+      type: object
+      required: [connected]
+      properties:
+        connected:
+          type: boolean
+        octoprintUrl:
+          type: ["string", "null"]
+        version:
+          type: ["string", "null"]
+        job:
+          nullable: true
+        printer:
+          nullable: true
+        files:
+          type: array
+          items:
+            type: string
+        error:
+          type: ["string", "null"]
+
+    Makerspace:
+      type: object
+      required: [name, address, distance, services]
+      properties:
+        name:
+          type: string
+        address:
+          type: string
+        distance:
+          type: string
+        services:
+          type: array
+          items:
+            type: string
+        website:
+          type: ["string", "null"]
+
+    # ── COMMUNITY ────────────────────────────────────────────────────────────
+    ShareCard:
+      type: object
+      required: [title, shareUrl, ogImageUrl]
+      properties:
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+        skillLevel:
+          type: ["string", "null"]
+        estimatedCost:
+          type: ["number", "null"]
+        estimatedTime:
+          type: ["string", "null"]
+        shareUrl:
+          type: string
+        ogImageUrl:
+          type: string
+          description: URL to the rendered SVG social card image
+        tags:
+          type: array
+          items:
+            type: string
+        affiliateHighlights:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              supplier:
+                type: string
+              price:
+                type: ["number", "null"]
+              affiliateUrl:
+                type: ["string", "null"]
+
+    ShowcasePost:
+      type: object
+      required: [id, userId, projectId, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        projectId:
+          type: integer
+        caption:
+          type: ["string", "null"]
+        imageUrls:
+          type: array
+          items:
+            type: string
+        likeCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    # ── ADMIN ────────────────────────────────────────────────────────────────
+    AdminAnalytics:
+      type: object
+      required: [totalUsers, totalProjects, readyProjects, generationsToday, totalAffiliateClicks]
+      properties:
+        totalUsers:
+          type: integer
+        totalProjects:
+          type: integer
+        readyProjects:
+          type: integer
+        generationsToday:
+          type: integer
+        totalAffiliateClicks:
+          type: integer
+        topProjects:
+          type: array
+          items:
+            type: object
+        conversionFunnel:
+          type: object
+          additionalProperties:
+            type: integer
+        clicksBySupplier:
+          type: array
+          items:
+            type: object
 
     # ── DASHBOARD ───────────────────────────────────────────────────────────
     DashboardSummary:

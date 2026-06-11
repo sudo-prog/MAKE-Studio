@@ -18,7 +18,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 export async function getOrCreateUser(clerkUserId: string, email?: string, displayName?: string) {
   const existing = await db.select().from(usersTable).where(eq(usersTable.clerkId, clerkUserId)).limit(1);
   if (existing.length > 0) {
-    return existing[0];
+    const u = existing[0];
+    // Sync the verified Clerk email if we previously stored a placeholder — fixes admin matching
+    if (email && u.email.endsWith("@placeholder.com")) {
+      const [updated] = await db.update(usersTable).set({ email }).where(eq(usersTable.id, u.id)).returning();
+      return updated;
+    }
+    return u;
   }
   const [user] = await db.insert(usersTable).values({
     clerkId: clerkUserId,
@@ -37,7 +43,10 @@ export async function requireDbUser(req: Request, res: Response, next: NextFunct
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  const user = await getOrCreateUser(clerkUserId);
+  // Extract verified email from Clerk session claims so admin matching works
+  const claims = (auth as any)?.sessionClaims as Record<string, unknown> | undefined;
+  const claimsEmail = (claims?.email ?? claims?.primaryEmailAddress) as string | undefined;
+  const user = await getOrCreateUser(clerkUserId, claimsEmail);
   (req as any).dbUser = user;
   (req as any).clerkUserId = clerkUserId;
   next();
