@@ -1,5 +1,7 @@
-import { useState, useEffect, Suspense, useRef } from "react";
+import { useState, useEffect, Suspense, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import type { BufferGeometry } from "three";
 import {
   useGetProject,
   useGetProjectSections,
@@ -23,13 +25,36 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Settings, Cpu, Cuboid, ListOrdered, BookOpen, Share2, Download,
-  Copy, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, SendHorizonal, CheckCircle,
+  Copy, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, SendHorizonal, CheckCircle, Upload,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Box, Sphere, Octahedron } from "@react-three/drei";
 
-// --- 3D Placeholder Viewer ---
+// --- STL Mesh from uploaded file ---
+function STLMesh({ geometry }: { geometry: BufferGeometry }) {
+  useEffect(() => {
+    if (!geometry) return;
+    geometry.computeVertexNormals();
+    geometry.center();
+    geometry.computeBoundingBox();
+    const bbox = geometry.boundingBox;
+    if (bbox) {
+      const sizeX = bbox.max.x - bbox.min.x;
+      const sizeY = bbox.max.y - bbox.min.y;
+      const sizeZ = bbox.max.z - bbox.min.z;
+      const maxDim = Math.max(sizeX, sizeY, sizeZ);
+      if (maxDim > 0) geometry.scale(2 / maxDim, 2 / maxDim, 2 / maxDim);
+    }
+  }, [geometry]);
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial color="#0bdba8" metalness={0.3} roughness={0.4} />
+    </mesh>
+  );
+}
+
+// --- Placeholder wireframe ---
 function ModelPlaceholder() {
   const meshRef = useRef<any>(null);
   useEffect(() => {
@@ -56,20 +81,49 @@ function ModelPlaceholder() {
   );
 }
 
-function ThreeDPreview() {
+function ThreeDPreview({ stlGeometry }: { stlGeometry: BufferGeometry | null }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [localGeometry, setLocalGeometry] = useState<BufferGeometry | null>(stlGeometry);
+
+  const onStlFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const loader = new STLLoader();
+        const geo = loader.parse(ev.target?.result as ArrayBuffer);
+        setLocalGeometry(geo);
+      } catch { /* ignore invalid STL */ }
+    };
+    reader.readAsArrayBuffer(file);
+  }, []);
+
   return (
-    <div className="w-full h-[280px] rounded-xl overflow-hidden bg-secondary/30 border border-border/50">
-      <Canvas camera={{ position: [3, 2, 3], fov: 45 }}>
-        <ambientLight intensity={0.4} />
-        <pointLight position={[5, 5, 5]} intensity={1} color="#0bdba8" />
-        <Suspense fallback={null}>
-          <ModelPlaceholder />
-        </Suspense>
-        <OrbitControls autoRotate autoRotateSpeed={0.8} enableZoom enablePan={false} />
-      </Canvas>
-      <p className="text-center text-[10px] font-mono text-muted-foreground -mt-5 pb-2">
-        3D preview — upload STL for exact render
-      </p>
+    <div className="w-full rounded-xl overflow-hidden bg-secondary/30 border border-border/50">
+      <div className="h-[260px]">
+        <Canvas camera={{ position: [3, 2, 3], fov: 45 }}>
+          <ambientLight intensity={0.5} />
+          <pointLight position={[5, 5, 5]} intensity={1} color="#0bdba8" />
+          <pointLight position={[-5, -5, -5]} intensity={0.3} color="#38bdf8" />
+          <Suspense fallback={null}>
+            {localGeometry ? <STLMesh geometry={localGeometry} /> : <ModelPlaceholder />}
+          </Suspense>
+          <OrbitControls autoRotate={!localGeometry} autoRotateSpeed={0.8} enableZoom enablePan={false} />
+        </Canvas>
+      </div>
+      <div className="flex items-center justify-between px-3 py-2 border-t border-border/30">
+        <p className="text-[10px] font-mono text-muted-foreground">
+          {localGeometry ? "STL loaded — drag to rotate" : "Wireframe placeholder — upload STL for exact render"}
+        </p>
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors font-mono"
+        >
+          <Upload className="h-3 w-3" /> Upload STL
+          <input ref={fileRef} type="file" accept=".stl" className="hidden" onChange={onStlFile} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -362,7 +416,7 @@ export default function ProjectDetail() {
                 <ChatPanel projectId={id} />
               </div>
               <div>
-                <ThreeDPreview />
+                <ThreeDPreview stlGeometry={null} />
                 {project.renderImageUrl && (
                   <img src={project.renderImageUrl} alt="Render" className="mt-3 rounded-lg w-full object-cover max-h-48 border border-border" />
                 )}
@@ -418,7 +472,7 @@ export default function ProjectDetail() {
                 ) : (
                   <p className="text-muted-foreground text-sm">Mechanical data not yet generated.</p>
                 )}
-                <ThreeDPreview />
+                <ThreeDPreview stlGeometry={null} />
               </CardContent>
             </Card>
           </TabsContent>

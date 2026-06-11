@@ -240,6 +240,59 @@ router.get("/projects/:id/export", requireDbUser, async (req, res) => {
       archive.append(`# Lesson Plan: ${project.title}\n\n${sections.educationPack.lessonPlan ?? ""}\n\n## Student Worksheet\n\n${sections.educationPack.worksheetMarkdown ?? ""}`, { name: "education-pack.md" });
     }
 
+    // STL generation instructions
+    const scadFile = sections.mechanical?.openScadCode ? `${slugTitle}.scad` : "your-design.scad";
+    archive.append(
+      `# How to Generate STL from OpenSCAD\n\n` +
+      `Your project package includes an OpenSCAD source file (\`${scadFile}\`). ` +
+      `Follow these steps to export a printable STL:\n\n` +
+      `## Option A — OpenSCAD Desktop App (Recommended)\n` +
+      `1. Download OpenSCAD from https://openscad.org/downloads.html\n` +
+      `2. Open \`${scadFile}\` in OpenSCAD\n` +
+      `3. Press **F6** (or Design → Render) to compile the geometry\n` +
+      `4. Go to **File → Export → Export as STL…** and save the \`.stl\` file\n` +
+      `5. Slice the STL in your preferred slicer (Cura, PrusaSlicer, Bambu Studio)\n\n` +
+      `## Option B — Command Line\n` +
+      `\`\`\`bash\n` +
+      `openscad -o output.stl ${scadFile}\n` +
+      `\`\`\`\n\n` +
+      `## Option C — Online (no install)\n` +
+      `Visit https://www.openscad.org/index.html#try-openscad and paste the code.\n\n` +
+      `## Recommended Print Settings\n` +
+      `${sections.mechanical?.printSettings ?? "See the build guide for recommended print settings."}\n`,
+      { name: "stl-generation-instructions.md" }
+    );
+
+    // KiCad electronics package instructions
+    if (sections.electronics) {
+      archive.append(
+        `# KiCad Electronics Package — ${project.title}\n\n` +
+        `This package includes an electronics guide with schematic description, wiring diagram, ` +
+        `and power calculations. To create a full KiCad project:\n\n` +
+        `## Getting Started with KiCad\n` +
+        `1. Download KiCad from https://www.kicad.org/download/\n` +
+        `2. Create a new project: **File → New Project**\n` +
+        `3. Open the Schematic Editor (Eeschema)\n\n` +
+        `## Schematic Overview\n` +
+        `${sections.electronics.schematicDescription ?? ""}\n\n` +
+        `## Wiring Connections\n` +
+        `\`\`\`\n${sections.electronics.wiringDiagram ?? ""}\n\`\`\`\n\n` +
+        `## Power Budget\n` +
+        `${sections.electronics.powerCalcs ?? ""}\n\n` +
+        `## Recommended KiCad Libraries\n` +
+        `- Device — resistors, capacitors, connectors\n` +
+        `- MCU_Microchip_ATmega — Arduino-compatible MCUs\n` +
+        `- MCU_Espressif — ESP32 / ESP8266 modules\n` +
+        `- Connector_PinHeader_2.54mm — standard pin headers\n` +
+        `- Power — VCC, GND, +3.3V, +5V symbols\n\n` +
+        `## PCB Manufacturing\n` +
+        `After completing the schematic and PCB layout, export Gerber files via:\n` +
+        `**File → Fabrication Outputs → Gerbers (.gbr)**\n` +
+        `Upload to JLCPCB (https://jlcpcb.com) or PCBWay for fabrication.\n`,
+        { name: "kicad-electronics-package.md" }
+      );
+    }
+
     await archive.finalize();
   } catch (err) {
     res.status(500).json({ error: "Failed to export project" });
