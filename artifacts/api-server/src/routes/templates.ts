@@ -35,9 +35,9 @@ router.get("/templates", async (req, res) => {
 router.post("/templates/:id/fork", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [template] = await db.select().from(templatesTable).where(eq(templatesTable.id, id)).limit(1);
-    if (!template) return res.status(404).json({ error: "Template not found" });
+    if (!template) { res.status(404).json({ error: "Template not found" }); return; }
 
     const [project] = await db.insert(projectsTable).values({
       userId: user.id,

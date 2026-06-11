@@ -43,10 +43,11 @@ router.post("/credits/checkout", requireDbUser, async (req, res) => {
     const { plan } = req.body;
     const stripe = getStripe();
     if (!stripe) {
-      return res.status(400).json({ error: "Stripe is not configured. Set STRIPE_SECRET_KEY to enable payments." });
+      res.status(400).json({ error: "Stripe is not configured. Set STRIPE_SECRET_KEY to enable payments." });
+      return;
     }
     const priceId = PLANS[plan];
-    if (!priceId) return res.status(400).json({ error: "Invalid plan" });
+    if (!priceId) { res.status(400).json({ error: "Invalid plan" }); return; }
 
     const host = req.get("origin") ?? `https://${req.get("host")}`;
     const session = await stripe.checkout.sessions.create({
@@ -70,10 +71,12 @@ router.post("/credits/portal", requireDbUser, async (req, res) => {
     const user = (req as any).dbUser;
     const stripe = getStripe();
     if (!stripe) {
-      return res.status(400).json({ error: "Stripe is not configured." });
+      res.status(400).json({ error: "Stripe is not configured." });
+      return;
     }
     if (!user.stripeCustomerId) {
-      return res.status(400).json({ error: "No billing account found." });
+      res.status(400).json({ error: "No billing account found." });
+      return;
     }
     const host = req.get("origin") ?? `https://${req.get("host")}`;
     const session = await stripe.billingPortal.sessions.create({
@@ -89,14 +92,15 @@ router.post("/credits/portal", requireDbUser, async (req, res) => {
 // POST /api/stripe/webhook
 router.post("/stripe/webhook", express_raw_handler, async (req, res) => {
   const stripe = getStripe();
-  if (!stripe) return res.status(400).send("Stripe not configured");
+  if (!stripe) { res.status(400).send("Stripe not configured"); return; }
   const sig = req.headers["stripe-signature"];
-  if (!sig || !process.env.STRIPE_WEBHOOK_SECRET) return res.status(400).send("Missing signature");
+  if (!sig || !process.env.STRIPE_WEBHOOK_SECRET) { res.status(400).send("Missing signature"); return; }
   let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent((req as any).rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    return res.status(400).send("Webhook signature verification failed");
+    res.status(400).send("Webhook signature verification failed");
+    return;
   }
 
   if (event.type === "checkout.session.completed") {

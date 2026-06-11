@@ -25,12 +25,13 @@ router.post("/generate", requireDbUser, async (req, res) => {
         user.dailyCreditsUsed = 0;
       }
       if (user.dailyCreditsUsed >= FREE_DAILY_LIMIT) {
-        return res.status(402).json({ error: "Daily generation limit reached. Upgrade to Pro for unlimited generations.", upgradeRequired: true });
+        res.status(402).json({ error: "Daily generation limit reached. Upgrade to Pro for unlimited generations.", upgradeRequired: true });
+        return;
       }
     }
 
     const { prompt, imageUrl, category, skillLevel, budget, educationMode, templateId } = req.body;
-    if (!prompt) return res.status(400).json({ error: "prompt required" });
+    if (!prompt) { res.status(400).json({ error: "prompt required" }); return; }
 
     // Create project in "generating" state
     const [project] = await db.insert(projectsTable).values({
@@ -109,14 +110,14 @@ router.post("/generate", requireDbUser, async (req, res) => {
 router.post("/generate/:projectId/refine", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const projectId = parseInt(req.params.projectId);
+    const projectId = parseInt(String(req.params.projectId));
     const { section, prompt } = req.body;
-    if (!section || !prompt) return res.status(400).json({ error: "section and prompt required" });
+    if (!section || !prompt) { res.status(400).json({ error: "section and prompt required" }); return; }
 
     const [project] = await db.select().from(projectsTable).where(
       and(eq(projectsTable.id, projectId), eq(projectsTable.userId, user.id))
     ).limit(1);
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
     const sectionMap: Record<string, any> = {
       mechanical: project.mechanicalSection,

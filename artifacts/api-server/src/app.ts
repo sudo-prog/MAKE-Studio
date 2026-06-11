@@ -36,6 +36,17 @@ app.use(
 // Clerk proxy must come before body parsers (streams raw bytes)
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
+// Stripe webhook needs raw body for signature verification — mount BEFORE express.json()
+app.use(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  (req, _res, next) => {
+    // Make raw buffer available as req.rawBody for webhook handler
+    (req as any).rawBody = req.body;
+    next();
+  },
+);
+
 app.use(cors({ credentials: true, origin: true }));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));

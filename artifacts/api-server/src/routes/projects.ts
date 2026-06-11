@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { projectsTable, chatMessagesTable } from "@workspace/db";
 import { eq, and, desc, ilike, sql } from "drizzle-orm";
 import { requireDbUser } from "../lib/auth";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { nanoid } from "nanoid";
 
 const router = Router();
@@ -56,7 +56,7 @@ router.post("/projects", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
     const { title, prompt, category, skillLevel } = req.body;
-    if (!title || !prompt) return res.status(400).json({ error: "title and prompt required" });
+    if (!title || !prompt) { res.status(400).json({ error: "title and prompt required" }); return; }
     const [project] = await db.insert(projectsTable).values({
       userId: user.id,
       title,
@@ -75,11 +75,11 @@ router.post("/projects", requireDbUser, async (req, res) => {
 router.get("/projects/:id", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [project] = await db.select().from(projectsTable).where(
       and(eq(projectsTable.id, id), eq(projectsTable.userId, user.id))
     ).limit(1);
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
     res.json(formatProjectFull(project));
   } catch (err) {
     res.status(500).json({ error: "Failed to get project" });
@@ -90,7 +90,7 @@ router.get("/projects/:id", requireDbUser, async (req, res) => {
 router.patch("/projects/:id", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const { title, isPublic, category } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = title;
@@ -99,7 +99,7 @@ router.patch("/projects/:id", requireDbUser, async (req, res) => {
     const [updated] = await db.update(projectsTable).set(updates).where(
       and(eq(projectsTable.id, id), eq(projectsTable.userId, user.id))
     ).returning();
-    if (!updated) return res.status(404).json({ error: "Project not found" });
+    if (!updated) { res.status(404).json({ error: "Project not found" }); return; }
     res.json(formatProjectFull(updated));
   } catch (err) {
     res.status(500).json({ error: "Failed to update project" });
@@ -110,7 +110,7 @@ router.patch("/projects/:id", requireDbUser, async (req, res) => {
 router.delete("/projects/:id", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     await db.delete(projectsTable).where(
       and(eq(projectsTable.id, id), eq(projectsTable.userId, user.id))
     );
@@ -124,11 +124,11 @@ router.delete("/projects/:id", requireDbUser, async (req, res) => {
 router.get("/projects/:id/sections", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [project] = await db.select().from(projectsTable).where(
       and(eq(projectsTable.id, id), eq(projectsTable.userId, user.id))
     ).limit(1);
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
     res.json(formatSections(project));
   } catch (err) {
     res.status(500).json({ error: "Failed to get sections" });
@@ -139,11 +139,11 @@ router.get("/projects/:id/sections", requireDbUser, async (req, res) => {
 router.get("/projects/:id/messages", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [project] = await db.select({ id: projectsTable.id }).from(projectsTable).where(
       and(eq(projectsTable.id, id), eq(projectsTable.userId, user.id))
     ).limit(1);
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
     const messages = await db.select().from(chatMessagesTable)
       .where(eq(chatMessagesTable.projectId, id))
       .orderBy(chatMessagesTable.createdAt);
@@ -157,14 +157,14 @@ router.get("/projects/:id/messages", requireDbUser, async (req, res) => {
 router.post("/projects/:id/messages", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const { content, section } = req.body;
-    if (!content) return res.status(400).json({ error: "content required" });
+    if (!content) { res.status(400).json({ error: "content required" }); return; }
 
     const [project] = await db.select().from(projectsTable).where(
       and(eq(projectsTable.id, id), eq(projectsTable.userId, user.id))
     ).limit(1);
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
     const [userMsg] = await db.insert(chatMessagesTable).values({
       projectId: id,
@@ -203,17 +203,17 @@ router.post("/projects/:id/messages", requireDbUser, async (req, res) => {
 router.get("/projects/:id/export", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [project] = await db.select().from(projectsTable).where(
       and(eq(projectsTable.id, id), eq(projectsTable.userId, user.id))
     ).limit(1);
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
     const slugTitle = project.title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="${slugTitle}-makerforge.zip"`);
 
-    const archive = archiver("zip", { zlib: { level: 9 } });
+    const archive = new ZipArchive({ zlib: { level: 9 } });
     archive.pipe(res);
 
     const sections = formatSections(project);
@@ -250,11 +250,11 @@ router.get("/projects/:id/export", requireDbUser, async (req, res) => {
 router.post("/projects/:id/share", requireDbUser, async (req, res) => {
   try {
     const user = (req as any).dbUser;
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [project] = await db.select().from(projectsTable).where(
       and(eq(projectsTable.id, id), eq(projectsTable.userId, user.id))
     ).limit(1);
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
     
     let slug = project.shareSlug;
     if (!slug) {

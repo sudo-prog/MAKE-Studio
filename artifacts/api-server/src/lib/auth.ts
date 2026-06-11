@@ -8,7 +8,8 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const auth = getAuth(req);
   const clerkUserId = auth?.userId;
   if (!clerkUserId) {
-    return res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Unauthorized" });
+    return;
   }
   (req as any).clerkUserId = clerkUserId;
   next();
@@ -33,7 +34,8 @@ export async function requireDbUser(req: Request, res: Response, next: NextFunct
   const auth = getAuth(req);
   const clerkUserId = auth?.userId;
   if (!clerkUserId) {
-    return res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Unauthorized" });
+    return;
   }
   const user = await getOrCreateUser(clerkUserId);
   (req as any).dbUser = user;

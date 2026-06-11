@@ -8,11 +8,11 @@ const router = Router();
 // GET /api/public/projects/:slug
 router.get("/public/projects/:slug", async (req, res) => {
   try {
-    const { slug } = req.params;
+    const slug = String(req.params.slug);
     const [project] = await db.select().from(projectsTable).where(
       and(eq(projectsTable.shareSlug, slug), eq(projectsTable.isPublic, true))
     ).limit(1);
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
     res.json({
       id: project.id,
@@ -64,6 +64,7 @@ router.get("/public/gallery", async (req, res) => {
         renderImageUrl: projectsTable.renderImageUrl,
         category: projectsTable.category,
         estimatedCost: projectsTable.estimatedCost,
+        shareSlug: projectsTable.shareSlug,  // ← include shareSlug so gallery cards link correctly
         createdAt: projectsTable.createdAt,
         updatedAt: projectsTable.updatedAt,
       }).from(projectsTable)
@@ -89,7 +90,7 @@ router.get("/public/gallery", async (req, res) => {
 router.post("/public/affiliate-click", async (req, res) => {
   try {
     const { supplier, partName, url, projectId, userId } = req.body;
-    if (!supplier || !url) return res.status(400).json({ error: "supplier and url required" });
+    if (!supplier || !url) { res.status(400).json({ error: "supplier and url required" }); return; }
     await db.insert(affiliateClicksTable).values({ supplier, partName, url, projectId, userId });
     res.json({ ok: true });
   } catch (_) {
