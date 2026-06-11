@@ -1,0 +1,3 @@
+- [Clerk dev vs prod proxy](clerk-proxy-dev-prod.md) — clerkProxyUrl must be undefined in dev (pk_test_* keys load direct from CDN); only set proxyUrl in prod.
+- [API hooks queryKey pattern](api-hooks-querykey.md) — orval-generated hooks require queryKey in UseQueryOptions; always pass matching getXxxQueryKey() alongside enabled.
+- [MakerForge stack](makerforge-stack.md) — core architecture decisions: Express 5 + Drizzle + Clerk + Stripe + OpenAI-compatible AI, sections stored as jsonb blobs in projects table.

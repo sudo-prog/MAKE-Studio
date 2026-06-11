@@ -3,13 +3,30 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: MakerForge API — AI-powered hardware project generation platform
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: users
+    description: User profile and settings
+  - name: projects
+    description: Hardware project CRUD
+  - name: generate
+    description: AI generation pipeline
+  - name: templates
+    description: Project templates
+  - name: bom
+    description: Bill of materials
+  - name: credits
+    description: Credits and subscription
+  - name: dashboard
+    description: Dashboard summary endpoints
+  - name: public
+    description: Public/unauthenticated endpoints
+
 paths:
   /healthz:
     get:
@@ -24,6 +41,455 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── USER ──────────────────────────────────────────────────────────────────
+  /users/me:
+    get:
+      operationId: getMe
+      tags: [users]
+      summary: Get current user profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+    patch:
+      operationId: updateMe
+      tags: [users]
+      summary: Update current user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  # ── PROJECTS ──────────────────────────────────────────────────────────────
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List current user's projects
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Projects list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectList"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get project by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Project detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update project metadata
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectUpdate"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /projects/{id}/sections:
+    get:
+      operationId: getProjectSections
+      tags: [projects]
+      summary: Get all sections for a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Project sections
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSections"
+
+  /projects/{id}/messages:
+    get:
+      operationId: getProjectMessages
+      tags: [projects]
+      summary: Get chat message history for a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Message history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatMessage"
+    post:
+      operationId: addProjectMessage
+      tags: [projects]
+      summary: Add a user chat message (triggers generation)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatMessageInput"
+      responses:
+        "201":
+          description: Message added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessage"
+
+  /projects/{id}/export:
+    get:
+      operationId: exportProject
+      tags: [projects]
+      summary: Export project as ZIP
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ZIP file
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+
+  /projects/{id}/share:
+    post:
+      operationId: shareProject
+      tags: [projects]
+      summary: Generate or get shareable public link
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Share link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareLink"
+
+  # ── AI GENERATION ─────────────────────────────────────────────────────────
+  /generate:
+    post:
+      operationId: generateProject
+      tags: [generate]
+      summary: Generate a new project package from a prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateInput"
+      responses:
+        "200":
+          description: Generated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "402":
+          description: Insufficient credits
+
+  /generate/{projectId}/refine:
+    post:
+      operationId: refineProjectSection
+      tags: [generate]
+      summary: Refine a specific project section with a prompt
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefineInput"
+      responses:
+        "200":
+          description: Updated project sections
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSections"
+
+  # ── TEMPLATES ─────────────────────────────────────────────────────────────
+  /templates:
+    get:
+      operationId: listTemplates
+      tags: [templates]
+      summary: List curated project templates
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Templates list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Template"
+
+  /templates/{id}/fork:
+    post:
+      operationId: forkTemplate
+      tags: [templates]
+      summary: Fork a template into a new project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Forked project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  # ── CREDITS ───────────────────────────────────────────────────────────────
+  /credits:
+    get:
+      operationId: getCredits
+      tags: [credits]
+      summary: Get current user credit balance and tier
+      responses:
+        "200":
+          description: Credits info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditsInfo"
+
+  /credits/checkout:
+    post:
+      operationId: createCheckout
+      tags: [credits]
+      summary: Create Stripe checkout session for Pro subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutInput"
+      responses:
+        "200":
+          description: Checkout URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutSession"
+
+  /credits/portal:
+    post:
+      operationId: createBillingPortal
+      tags: [credits]
+      summary: Create Stripe billing portal session
+      responses:
+        "200":
+          description: Portal URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingPortal"
+
+  # ── DASHBOARD / WOW ───────────────────────────────────────────────────────
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get user dashboard summary (totals, recent activity)
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/recent:
+    get:
+      operationId: getRecentProjects
+      tags: [dashboard]
+      summary: Get recently edited projects for quick access
+      responses:
+        "200":
+          description: Recent projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectCard"
+
+  # ── PUBLIC ────────────────────────────────────────────────────────────────
+  /public/projects/{slug}:
+    get:
+      operationId: getPublicProject
+      tags: [public]
+      summary: Get a public project by share slug (no auth required)
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Public project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Not found
+
+  /public/gallery:
+    get:
+      operationId: getPublicGallery
+      tags: [public]
+      summary: Browse public project gallery
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: category
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Gallery projects
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectList"
+
+# ── WEBHOOK (no generated hooks, server-only) ─────────────────────────────
+# POST /stripe/webhook — handled in Express, not in spec (raw body required)
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +500,485 @@ components:
       required:
         - status
 
+    # ── USER ────────────────────────────────────────────────────────────────
+    User:
+      type: object
+      required: [id, clerkId, email, tier, creditsBalance, educationMode, createdAt]
+      properties:
+        id:
+          type: integer
+        clerkId:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+        tier:
+          type: string
+          enum: [free, pro]
+        creditsBalance:
+          type: integer
+        educationMode:
+          type: boolean
+        githubConnected:
+          type: boolean
+        octoprintConnected:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    UserUpdate:
+      type: object
+      properties:
+        displayName:
+          type: string
+        educationMode:
+          type: boolean
+
+    # ── PROJECT ─────────────────────────────────────────────────────────────
+    Project:
+      type: object
+      required: [id, title, prompt, status, isPublic, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        prompt:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [draft, generating, ready, error]
+        isPublic:
+          type: boolean
+        shareSlug:
+          type: ["string", "null"]
+        renderImageUrl:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+        skillLevel:
+          type: ["string", "null"]
+        estimatedCost:
+          type: ["number", "null"]
+        estimatedTime:
+          type: ["string", "null"]
+        sections:
+          $ref: "#/components/schemas/ProjectSections"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProjectCard:
+      type: object
+      required: [id, title, status, renderImageUrl, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        status:
+          type: string
+        renderImageUrl:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+        estimatedCost:
+          type: ["number", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProjectList:
+      type: object
+      required: [items, total, page, limit]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectCard"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    ProjectInput:
+      type: object
+      required: [title, prompt]
+      properties:
+        title:
+          type: string
+        prompt:
+          type: string
+        category:
+          type: string
+        skillLevel:
+          type: string
+          enum: [beginner, intermediate, advanced]
+
+    ProjectUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        isPublic:
+          type: boolean
+        category:
+          type: string
+
+    ProjectSections:
+      type: object
+      properties:
+        mechanical:
+          $ref: "#/components/schemas/MechanicalSection"
+        electronics:
+          $ref: "#/components/schemas/ElectronicsSection"
+        bom:
+          $ref: "#/components/schemas/BomSection"
+        buildGuide:
+          $ref: "#/components/schemas/BuildGuideSection"
+        educationPack:
+          $ref: "#/components/schemas/EducationSection"
+        safety:
+          $ref: "#/components/schemas/SafetySection"
+
+    MechanicalSection:
+      type: object
+      properties:
+        openScadCode:
+          type: ["string", "null"]
+        printSettings:
+          type: ["string", "null"]
+        materials:
+          type: array
+          items:
+            type: string
+        assemblyNotes:
+          type: ["string", "null"]
+
+    ElectronicsSection:
+      type: object
+      properties:
+        schematicDescription:
+          type: ["string", "null"]
+        kiCadInstructions:
+          type: ["string", "null"]
+        wiringDiagram:
+          type: ["string", "null"]
+        powerCalcs:
+          type: ["string", "null"]
+        components:
+          type: array
+          items:
+            type: string
+
+    BomSection:
+      type: object
+      properties:
+        tiers:
+          type: object
+          properties:
+            budget:
+              type: array
+              items:
+                $ref: "#/components/schemas/BomItem"
+            balanced:
+              type: array
+              items:
+                $ref: "#/components/schemas/BomItem"
+            premium:
+              type: array
+              items:
+                $ref: "#/components/schemas/BomItem"
+
+    BomItem:
+      type: object
+      required: [name, quantity, unit, estimatedPrice]
+      properties:
+        name:
+          type: string
+        quantity:
+          type: number
+        unit:
+          type: string
+        estimatedPrice:
+          type: number
+        affiliateUrl:
+          type: ["string", "null"]
+        supplier:
+          type: ["string", "null"]
+        partNumber:
+          type: ["string", "null"]
+        alternatives:
+          type: array
+          items:
+            type: string
+
+    BuildGuideSection:
+      type: object
+      properties:
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuildStep"
+        toolsList:
+          type: array
+          items:
+            type: string
+        estimatedTime:
+          type: ["string", "null"]
+        estimatedCost:
+          type: ["number", "null"]
+        troubleshooting:
+          type: ["string", "null"]
+
+    BuildStep:
+      type: object
+      required: [stepNumber, title, description]
+      properties:
+        stepNumber:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: ["string", "null"]
+        warning:
+          type: ["string", "null"]
+
+    EducationSection:
+      type: object
+      properties:
+        lessonPlan:
+          type: ["string", "null"]
+        learningObjectives:
+          type: array
+          items:
+            type: string
+        ngssAlignments:
+          type: array
+          items:
+            type: string
+        worksheetMarkdown:
+          type: ["string", "null"]
+        reflectionPrompts:
+          type: array
+          items:
+            type: string
+        ageGroups:
+          type: array
+          items:
+            type: string
+
+    SafetySection:
+      type: object
+      properties:
+        riskScore:
+          type: ["integer", "null"]
+        riskLevel:
+          type: ["string", "null"]
+          enum: ["low", "medium", "high", null]
+        disclaimers:
+          type: array
+          items:
+            type: string
+        safetyNotes:
+          type: array
+          items:
+            type: string
+        environmentalImpact:
+          type: ["string", "null"]
+
+    ChatMessage:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id:
+          type: integer
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        section:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    ChatMessageInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+        section:
+          type: ["string", "null"]
+
+    ShareLink:
+      type: object
+      required: [slug, url]
+      properties:
+        slug:
+          type: string
+        url:
+          type: string
+
+    # ── GENERATE ────────────────────────────────────────────────────────────
+    GenerateInput:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+        imageUrl:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+        skillLevel:
+          type: ["string", "null"]
+          enum: ["beginner", "intermediate", "advanced", null]
+        budget:
+          type: ["string", "null"]
+          enum: ["budget", "balanced", "premium", null]
+        educationMode:
+          type: boolean
+        templateId:
+          type: ["integer", "null"]
+
+    RefineInput:
+      type: object
+      required: [section, prompt]
+      properties:
+        section:
+          type: string
+          enum: [mechanical, electronics, bom, buildGuide, educationPack, safety]
+        prompt:
+          type: string
+
+    # ── TEMPLATES ───────────────────────────────────────────────────────────
+    Template:
+      type: object
+      required: [id, title, description, category, difficulty, imageUrl]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        difficulty:
+          type: string
+          enum: [beginner, intermediate, advanced]
+        imageUrl:
+          type: ["string", "null"]
+        promptSeed:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+
+    # ── CREDITS ─────────────────────────────────────────────────────────────
+    CreditsInfo:
+      type: object
+      required: [balance, tier, dailyLimit, resetsAt]
+      properties:
+        balance:
+          type: integer
+        tier:
+          type: string
+          enum: [free, pro]
+        dailyLimit:
+          type: ["integer", "null"]
+        dailyUsed:
+          type: integer
+        resetsAt:
+          type: ["string", "null"]
+          format: date-time
+        stripeCustomerId:
+          type: ["string", "null"]
+
+    CheckoutInput:
+      type: object
+      required: [plan]
+      properties:
+        plan:
+          type: string
+          enum: [pro_monthly, pro_annual]
+
+    CheckoutSession:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+
+    BillingPortal:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+
+    # ── DASHBOARD ───────────────────────────────────────────────────────────
+    DashboardSummary:
+      type: object
+      required: [totalProjects, creditsBalance, tier, recentActivity]
+      properties:
+        totalProjects:
+          type: integer
+        completedProjects:
+          type: integer
+        creditsBalance:
+          type: integer
+        tier:
+          type: string
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityItem"
+        topCategories:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryCount"
+
+    ActivityItem:
+      type: object
+      required: [type, label, timestamp]
+      properties:
+        type:
+          type: string
+          enum: [project_created, project_generated, section_refined, project_exported]
+        label:
+          type: string
+        projectId:
+          type: ["integer", "null"]
+        timestamp:
+          type: string
+          format: date-time
+
+    CategoryCount:
+      type: object
+      required: [category, count]
+      properties:
+        category:
+          type: string
+        count:
+          type: integer
