@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/mobile/"
+title = "MakerForge Mobile"
+version = "1.0.0"
+id = "artifacts/makerforge-mobile"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/mobile/" ]
+localPort = 19352
+
+[services.development]
+run = "pnpm --filter @workspace/makerforge-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/makerforge-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/makerforge-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "19352"
+BASE_PATH = "/mobile/"
