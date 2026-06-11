@@ -107,14 +107,15 @@ function validateOctoPrintUrl(rawUrl: string): { valid: boolean; reason?: string
   if (blockedHosts.includes(host)) {
     return { valid: false, reason: "Cloud metadata endpoints are not allowed" };
   }
-  // Block loopback — OctoPrint must live on the LAN, not the server itself
-  if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "0.0.0.0") {
-    return { valid: false, reason: "Loopback addresses are not valid OctoPrint hosts" };
+  // Block loopback/link-local/unspecified IP literals at the static validation level
+  // (also caught by resolveAndCheckHost, but we block early for clarity)
+  const rawHost = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  const ipCheck = isBlockedIp(rawHost);
+  if (ipCheck.blocked) {
+    return { valid: false, reason: `Blocked address: ${ipCheck.reason}` };
   }
-  // Block link-local beyond the metadata IPs (169.254.x.x range)
-  const linkLocalMatch = host.match(/^169\.254\.(\d+)\.(\d+)$/);
-  if (linkLocalMatch) {
-    return { valid: false, reason: "Link-local addresses are not allowed" };
+  if (host === "localhost") {
+    return { valid: false, reason: "Loopback hostname 'localhost' is not a valid OctoPrint host" };
   }
   return { valid: true };
 }
@@ -305,29 +306,63 @@ router.post("/integrations/github/disconnect", requireDbUser, async (req, res) =
 // because OctoPrint is inherently a LAN-resident device.
 
 /**
- * DNS-based SSRF check — resolve the hostname and ensure it does not map to
- * a loopback or link-local address. RFC-1918 LAN ranges are intentionally
- * allowed since OctoPrint is a LAN device.
+ * Classify a single IP address string (no brackets) as blocked or allowed.
+ * Handles IPv4, IPv6, and IPv4-mapped IPv6.
+ */
+function isBlockedIp(addr: string): { blocked: boolean; reason?: string } {
+  const lower = addr.toLowerCase();
+
+  // ── IPv4 ──────────────────────────────────────────────────────────────
+  const v4 = addr.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const [a, b] = [parseInt(v4[1]), parseInt(v4[2])];
+    if (a === 127) return { blocked: true, reason: `Loopback IPv4 ${addr} (127.0.0.0/8)` };
+    if (a === 0)   return { blocked: true, reason: `Unspecified/loopback IPv4 ${addr}` };
+    if (a === 169 && b === 254) return { blocked: true, reason: `Link-local IPv4 ${addr} (169.254.0.0/16)` };
+    return { blocked: false };
+  }
+
+  // ── IPv6 ──────────────────────────────────────────────────────────────
+  if (lower === "::1")  return { blocked: true, reason: "Loopback IPv6 ::1" };
+  if (lower === "::")   return { blocked: true, reason: "Unspecified IPv6 ::" };
+  // fe80::/10 link-local
+  if (/^fe[89ab][0-9a-f]:/i.test(lower) || lower.startsWith("fe80:")) {
+    return { blocked: true, reason: `Link-local IPv6 ${addr}` };
+  }
+  // IPv4-mapped loopback  ::ffff:127.x.x.x
+  if (/^::ffff:127\./i.test(lower)) return { blocked: true, reason: `IPv4-mapped loopback ${addr}` };
+  // IPv4-mapped link-local ::ffff:169.254.x.x
+  if (/^::ffff:169\.254\./i.test(lower)) return { blocked: true, reason: `IPv4-mapped link-local ${addr}` };
+
+  return { blocked: false };
+}
+
+/**
+ * DNS-based SSRF check — for IP literals, classify them directly.
+ * For hostnames, resolve and classify all returned addresses.
+ * RFC-1918 private LAN ranges are intentionally allowed (OctoPrint is LAN-resident).
  */
 async function resolveAndCheckHost(hostname: string): Promise<{ allowed: boolean; reason?: string }> {
-  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) || hostname.startsWith("[")) {
+  // Strip IPv6 brackets: "[::1]" → "::1"
+  const stripped = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+
+  // If it looks like an IP literal (IPv4 or IPv6), classify directly — do NOT skip this check
+  const isIpLiteral = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(stripped) || stripped.includes(":");
+  if (isIpLiteral) {
+    const check = isBlockedIp(stripped);
+    if (check.blocked) return { allowed: false, reason: check.reason };
     return { allowed: true };
   }
+
+  // Hostname: DNS resolve and classify every returned address
   try {
     const result = await dnsPromises.lookup(hostname, { all: true });
     for (const { address } of result) {
-      if (/^127\./.test(address) || address === "::1" || address === "::") {
-        return { allowed: false, reason: `Hostname resolves to loopback address ${address}` };
-      }
-      if (/^169\.254\./.test(address) || /^fe80:/i.test(address)) {
-        return { allowed: false, reason: `Hostname resolves to link-local address ${address}` };
-      }
-      if (address === "0.0.0.0") {
-        return { allowed: false, reason: "Hostname resolves to unspecified address" };
-      }
+      const check = isBlockedIp(address);
+      if (check.blocked) return { allowed: false, reason: `Hostname resolves to blocked address — ${check.reason}` };
     }
   } catch {
-    // DNS resolution failure — let the outbound request fail naturally
+    // DNS failure — let the outbound HTTP request fail naturally
   }
   return { allowed: true };
 }

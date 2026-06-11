@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { projectsTable, usersTable, creditsLedgerTable, chatMessagesTable } from "@workspace/db";
+import { projectsTable, usersTable, creditsLedgerTable, chatMessagesTable, projectVersionsTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import { requireDbUser } from "../lib/auth";
 import { generateProjectPackage, refineSection } from "../lib/ai";
@@ -55,6 +55,23 @@ async function doGenerate(
         projectId: project.id,
         role: "assistant",
         content: `I've generated your complete project package for **${pkg.title ?? "your project"}**! Check the tabs above to explore the OpenSCAD design, electronics, BOM, build guide, and education pack.`,
+      });
+      // Auto-snapshot: store initial generation as version 1
+      await db.insert(projectVersionsTable).values({
+        projectId: project.id,
+        userId: userId,
+        versionNumber: 1,
+        prompt: project.prompt,
+        diffSummary: "Initial generation",
+        snapshot: {
+          title: pkg.title ?? project.title,
+          mechanical: pkg.mechanical ?? null,
+          electronics: pkg.electronics ?? null,
+          bom: pkg.bom ?? null,
+          buildGuide: pkg.buildGuide ?? null,
+          educationPack: pkg.educationPack ?? null,
+          safety: pkg.safety ?? null,
+        },
       });
     })
     .catch(async () => {

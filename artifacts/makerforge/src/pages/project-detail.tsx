@@ -498,6 +498,15 @@ export default function ProjectDetail() {
             }}>
             <Twitter className="mr-1 h-4 w-4" />Tweet
           </Button>
+          <Button variant="outline" size="sm"
+            onClick={async () => {
+              const url = project.shareSlug
+                ? `${window.location.origin}/share/${project.shareSlug}`
+                : window.location.href;
+              window.open(`https://www.reddit.com/submit?title=${encodeURIComponent(`I built this with MakerForge: ${project.title}`)}&url=${encodeURIComponent(url)}`, "_blank");
+            }}>
+            <Share2 className="mr-1 h-4 w-4" />Reddit
+          </Button>
           <Button size="sm" disabled={isGenerating} asChild>
             <a href={`/api/projects/${id}/export`} download>
               <Download className="mr-1 h-4 w-4" />Export ZIP

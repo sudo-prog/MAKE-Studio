@@ -418,11 +418,13 @@ router.post("/showcase/upload", requireDbUser, async (req, res) => {
 // ── EDUCATION EXPORT ──────────────────────────────────────────────────────────
 
 // GET /api/projects/:id/education-export — HTML formatted for print-to-PDF
-// Returns a standalone HTML document with lesson plan, NGSS alignment, worksheet
-router.get("/projects/:id/education-export", async (req, res) => {
+// Requires auth. Accessible only if the requesting user owns the project OR the project is public.
+router.get("/projects/:id/education-export", requireDbUser, async (req, res) => {
   try {
+    const user = (req as any).dbUser as { id: number };
     const projectId = parseInt(String(req.params.id));
     const [project] = await db.select({
+      userId: projectsTable.userId,
       title: projectsTable.title,
       description: projectsTable.description,
       category: projectsTable.category,
@@ -434,6 +436,10 @@ router.get("/projects/:id/education-export", async (req, res) => {
     }).from(projectsTable).where(eq(projectsTable.id, projectId)).limit(1);
 
     if (!project) { res.status(404).send("Not found"); return; }
+    // Access control: owner OR public project
+    if (project.userId !== user.id && !project.isPublic) {
+      res.status(403).send("Forbidden"); return;
+    }
 
     const edu = project.educationSection as any ?? {};
     const guide = project.buildGuideSection as any ?? {};
@@ -455,10 +461,12 @@ router.get("/projects/:id/education-export", async (req, res) => {
     .worksheet{border:2px dashed #6b7280;border-radius:8px;padding:16px;margin:1em 0}
     .answer-line{border-bottom:1px solid #9ca3af;margin:12px 0;min-height:28px}
     pre{background:#1f2937;color:#f9fafb;border-radius:6px;padding:12px;overflow-x:auto;font-size:.8em}
-    @media print{body{margin:0}pre{white-space:pre-wrap}}
+    .print-btn{position:fixed;top:16px;right:16px;background:#10b981;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:1em;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+    @media print{body{margin:0}.print-btn{display:none}pre{white-space:pre-wrap}}
   </style>
 </head>
 <body>
+  <button class="print-btn" onclick="window.print()">🖨 Print / Save PDF</button>
   <h1>📐 ${title}</h1>
   <div class="meta">
     <span>📚 <strong>Category:</strong> ${(project.category ?? "").replace(/</g,"&lt;")}</span>
