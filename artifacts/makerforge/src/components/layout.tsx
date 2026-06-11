@@ -1,9 +1,10 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Show, useUser, useClerk } from "@clerk/react";
-import { 
-  Hammer, LayoutDashboard, PlusSquare, FolderOpen, 
-  Library, CreditCard, UserCircle, LogOut, Settings, Menu
+import {
+  Hammer, LayoutDashboard, PlusSquare, FolderOpen,
+  Library, CreditCard, UserCircle, LogOut, Settings, Menu,
+  Globe, Camera, Trophy, Plug2, DollarSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -13,14 +14,38 @@ export function Layout({ children }: { children: ReactNode }) {
   const { signOut } = useClerk();
   const { user } = useUser();
 
-  const navigation = [
+  const authNavItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Create Project", href: "/create", icon: PlusSquare },
     { name: "My Projects", href: "/projects", icon: FolderOpen },
     { name: "Templates", href: "/templates", icon: Library },
-    { name: "Gallery", href: "/gallery", icon: Hammer },
+    { name: "Integrations", href: "/integrations", icon: Plug2 },
+    { name: "Affiliate", href: "/affiliate", icon: DollarSign },
+  ];
+
+  const publicNavItems = [
+    { name: "Gallery", href: "/gallery", icon: Globe },
+    { name: "Showcase", href: "/showcase", icon: Camera },
+    { name: "Challenges", href: "/challenges", icon: Trophy },
     { name: "Pricing", href: "/pricing", icon: CreditCard },
   ];
+
+  const NavItem = ({ name, href, icon: Icon }: { name: string; href: string; icon: any }) => {
+    const isActive = location === href || (href !== "/" && location.startsWith(href));
+    return (
+      <Link
+        href={href}
+        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+          isActive
+            ? "bg-primary/10 text-primary"
+            : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+        }`}
+      >
+        <Icon className="h-4 w-4" />
+        {name}
+      </Link>
+    );
+  };
 
   const SidebarContent = () => (
     <div className="flex h-full flex-col bg-card border-r border-border">
@@ -30,53 +55,23 @@ export function Layout({ children }: { children: ReactNode }) {
           MakerForge
         </Link>
       </div>
-      
+
       <div className="flex-1 overflow-y-auto py-4">
-        <nav className="grid gap-1 px-4">
+        <nav className="grid gap-0.5 px-4">
           <Show when="signed-in">
-            {navigation.slice(0, 4).map((item) => {
-              const isActive = location === item.href;
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                    isActive 
-                      ? "bg-primary/10 text-primary" 
-                      : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  }`}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.name}
-                </Link>
-              );
-            })}
+            <p className="px-3 py-1.5 text-[10px] font-mono text-muted-foreground/60 uppercase tracking-widest">Workspace</p>
+            {authNavItems.map((item) => <NavItem key={item.href} {...item} />)}
+            <div className="my-3 border-t border-border/50" />
           </Show>
-          <div className="my-4 border-t border-border/50"></div>
-          {navigation.slice(4).map((item) => {
-            const isActive = location === item.href;
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive 
-                    ? "bg-primary/10 text-primary" 
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                }`}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.name}
-              </Link>
-            );
-          })}
+          <p className="px-3 py-1.5 text-[10px] font-mono text-muted-foreground/60 uppercase tracking-widest">Community</p>
+          {publicNavItems.map((item) => <NavItem key={item.href} {...item} />)}
         </nav>
       </div>
 
       <Show when="signed-in">
         <div className="border-t border-border p-4">
           <div className="flex items-center gap-3 rounded-md px-3 py-2">
-            <div className="h-8 w-8 rounded-full bg-secondary overflow-hidden">
+            <div className="h-8 w-8 rounded-full bg-secondary overflow-hidden shrink-0">
               {user?.imageUrl ? (
                 <img src={user.imageUrl} alt="Avatar" className="h-full w-full object-cover" />
               ) : (
@@ -121,12 +116,12 @@ export function Layout({ children }: { children: ReactNode }) {
               <SidebarContent />
             </SheetContent>
           </Sheet>
-          
+
           <Link href="/" className="flex items-center gap-2 font-bold text-lg text-primary tracking-tight">
             <Hammer className="h-5 w-5" />
             MakerForge
           </Link>
-          
+
           <Show when="signed-out">
             <div className="ml-auto flex items-center gap-2">
               <Button variant="ghost" size="sm" asChild>

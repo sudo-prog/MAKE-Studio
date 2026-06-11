@@ -4,3 +4,7 @@ export * from "./templates";
 export * from "./chat_messages";
 export * from "./credits_ledger";
 export * from "./affiliate_clicks";
+export * from "./connected_accounts";
+export * from "./project_versions";
+export * from "./showcase";
+export * from "./challenges";

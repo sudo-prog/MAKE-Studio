@@ -18,11 +18,15 @@ import Pricing from "@/pages/pricing";
 import Profile from "@/pages/profile";
 import PublicProject from "@/pages/public-project";
 import Gallery from "@/pages/gallery";
+import Integrations from "@/pages/integrations";
+import Showcase from "@/pages/showcase";
+import Challenges from "@/pages/challenges";
+import AffiliateDashboard from "@/pages/affiliate";
+import AdminDashboard from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 
 const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-// Only use clerk proxy in production — dev instances load directly from Clerk CDN
 const clerkProxyUrl = import.meta.env.PROD
   ? `${window.location.origin}${basePath}/api/__clerk`
   : undefined;
@@ -157,6 +161,11 @@ function ClerkProviderWithRoutes() {
                   <Route path="/profile" component={Profile} />
                   <Route path="/share/:slug" component={PublicProject} />
                   <Route path="/gallery" component={Gallery} />
+                  <Route path="/integrations" component={Integrations} />
+                  <Route path="/showcase" component={Showcase} />
+                  <Route path="/challenges" component={Challenges} />
+                  <Route path="/affiliate" component={AffiliateDashboard} />
+                  <Route path="/admin" component={AdminDashboard} />
                   <Route component={NotFound} />
                 </Switch>
               </Layout>

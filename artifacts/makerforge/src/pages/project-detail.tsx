@@ -13,6 +13,10 @@ import {
   getGetProjectSectionsQueryKey,
   getGetProjectMessagesQueryKey,
   type RefineInputSection,
+  useProjectVersions,
+  useRestoreVersion,
+  useSnapshotVersion,
+  getProjectVersionsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,6 +30,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Settings, Cpu, Cuboid, ListOrdered, BookOpen, Share2, Download,
   Copy, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, SendHorizonal, CheckCircle, Upload,
+  History, RotateCcw, Camera, Twitter,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Canvas } from "@react-three/fiber";
@@ -268,6 +273,82 @@ function RefineBar({ projectId, section }: { projectId: number; section: RefineI
   );
 }
 
+// --- Version History Panel ---
+function VersionHistoryPanel({ projectId }: { projectId: number }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data: versions = [], isLoading } = useProjectVersions(projectId);
+  const snapshot = useSnapshotVersion({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getProjectVersionsQueryKey(projectId) });
+        toast({ title: "Snapshot saved" });
+      },
+    },
+  });
+  const restore = useRestoreVersion({
+    mutation: {
+      onSuccess: (data) => {
+        queryClient.invalidateQueries({ queryKey: getGetProjectSectionsQueryKey(projectId) });
+        queryClient.invalidateQueries({ queryKey: getProjectVersionsQueryKey(projectId) });
+        toast({ title: `Restored to version ${data.restoredTo}` });
+      },
+      onError: () => toast({ title: "Restore failed", variant: "destructive" }),
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-3 flex flex-row items-center justify-between">
+        <CardTitle className="text-base flex items-center gap-2">
+          <History className="h-4 w-4 text-primary" />Version History
+        </CardTitle>
+        <Button
+          size="sm" variant="outline" className="h-7 text-xs gap-1"
+          disabled={snapshot.isPending}
+          onClick={() => snapshot.mutate({ id: projectId, diffSummary: "Manual snapshot" })}
+        >
+          <Camera className="h-3 w-3" />Save Snapshot
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-12 bg-secondary animate-pulse rounded-lg" />)}</div>
+        ) : versions.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <History className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No snapshots yet.</p>
+            <p className="text-xs mt-1">Click "Save Snapshot" to capture the current state of your project.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {versions.map((v) => (
+              <div key={v.id} className="flex items-center gap-3 rounded-lg border border-border/50 bg-secondary/20 p-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-primary">v{v.versionNumber}</span>
+                    <span className="text-sm text-foreground truncate">{v.diffSummary ?? "Snapshot"}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {new Date(v.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                <Button
+                  size="sm" variant="ghost" className="h-7 text-xs shrink-0 gap-1 text-muted-foreground hover:text-foreground"
+                  disabled={restore.isPending}
+                  onClick={() => restore.mutate({ projectId, versionId: v.id })}
+                >
+                  <RotateCcw className="h-3 w-3" />Restore
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // --- Main Component ---
 export default function ProjectDetail() {
   const params = useParams();
@@ -344,11 +425,25 @@ export default function ProjectDetail() {
           </div>
           <p className="text-muted-foreground text-sm mt-1 max-w-2xl">{project.description || project.prompt}</p>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 shrink-0 flex-wrap">
           <Button variant="outline" size="sm"
             disabled={shareMutation.isPending}
-            onClick={() => shareMutation.mutate({ id })}>
-            <Share2 className="mr-1 h-4 w-4" />Share
+            onClick={async () => {
+              const result = await shareMutation.mutateAsync({ id });
+              const url = result?.url ?? window.location.href;
+              navigator.clipboard?.writeText(url).catch(() => {});
+              toast({ title: "Share link copied!" });
+            }}>
+            <Copy className="mr-1 h-4 w-4" />Copy Link
+          </Button>
+          <Button variant="outline" size="sm"
+            onClick={async () => {
+              const url = project.shareSlug
+                ? `${window.location.origin}/share/${project.shareSlug}`
+                : window.location.href;
+              window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out my MakerForge build: ${project.title}`)}&url=${encodeURIComponent(url)}`, "_blank");
+            }}>
+            <Twitter className="mr-1 h-4 w-4" />Tweet
           </Button>
           <Button size="sm" disabled={isGenerating} asChild>
             <a href={`/api/projects/${id}/export`} download>
@@ -380,6 +475,7 @@ export default function ProjectDetail() {
             <TabsTrigger value="bom"><ListOrdered className="mr-1 h-3 w-3" />BOM</TabsTrigger>
             <TabsTrigger value="guide"><Settings className="mr-1 h-3 w-3" />Build Guide</TabsTrigger>
             <TabsTrigger value="edu"><BookOpen className="mr-1 h-3 w-3" />Education</TabsTrigger>
+            <TabsTrigger value="history"><History className="mr-1 h-3 w-3" />History</TabsTrigger>
           </TabsList>
 
           {/* OVERVIEW */}
@@ -681,6 +777,11 @@ export default function ProjectDetail() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* HISTORY */}
+          <TabsContent value="history">
+            <VersionHistoryPanel projectId={id} />
           </TabsContent>
         </Tabs>
       )}
