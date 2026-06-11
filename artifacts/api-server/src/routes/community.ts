@@ -338,6 +338,34 @@ router.get("/challenges/:id/submissions", async (req, res) => {
   }
 });
 
+// POST /api/challenges/:id/submissions/:subId/winner — admin marks a submission as winner
+router.post("/challenges/:id/submissions/:subId/winner", requireDbUser, async (req, res) => {
+  try {
+    const user = (req as any).dbUser;
+    const adminEmails = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim());
+    if (!adminEmails.includes(user.email)) { res.status(403).json({ error: "Admin only" }); return; }
+
+    const challengeId = parseInt(String(req.params.id));
+    const subId = parseInt(String(req.params.subId));
+
+    // Clear previous winners for this challenge
+    await db.update(challengeSubmissionsTable).set({ isWinner: false })
+      .where(eq(challengeSubmissionsTable.challengeId, challengeId));
+    // Set new winner
+    await db.update(challengeSubmissionsTable).set({ isWinner: true })
+      .where(and(eq(challengeSubmissionsTable.id, subId), eq(challengeSubmissionsTable.challengeId, challengeId)));
+    // Update challenge.winnerId
+    const [sub] = await db.select({ userId: challengeSubmissionsTable.userId, projectId: challengeSubmissionsTable.projectId })
+      .from(challengeSubmissionsTable).where(eq(challengeSubmissionsTable.id, subId)).limit(1);
+    if (sub) {
+      await db.update(challengesTable).set({ winnerId: sub.userId, isActive: false }).where(eq(challengesTable.id, challengeId));
+    }
+    res.json({ ok: true, winnerId: sub?.userId });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to set winner" });
+  }
+});
+
 // POST /api/challenges/:id/submit
 router.post("/challenges/:id/submit", requireDbUser, async (req, res) => {
   try {
@@ -361,6 +389,116 @@ router.post("/challenges/:id/submit", requireDbUser, async (req, res) => {
     res.status(201).json(sub);
   } catch (err) {
     res.status(500).json({ error: "Failed to submit to challenge" });
+  }
+});
+
+// ── SHOWCASE MEDIA UPLOAD ─────────────────────────────────────────────────────
+
+// POST /api/showcase/upload — accept base64-encoded image/video and return an accessible URL
+// For simplicity, stores the data inline as a data URL (suitable for small images).
+// Production deployments should swap this for object storage (e.g., Replit App Storage).
+router.post("/showcase/upload", requireDbUser, async (req, res) => {
+  try {
+    const { filename, content, mediaType } = req.body;
+    if (!content) { res.status(400).json({ error: "content (base64) required" }); return; }
+
+    const ext = (filename ?? "file").split(".").pop()?.toLowerCase() ?? "jpg";
+    const mimeMap: Record<string, string> = {
+      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+      gif: "image/gif", webp: "image/webp", mp4: "video/mp4", webm: "video/webm",
+    };
+    const mime = mimeMap[ext] ?? (mediaType === "video" ? "video/mp4" : "image/jpeg");
+    const dataUrl = `data:${mime};base64,${content}`;
+    res.json({ url: dataUrl, mediaType: mime.startsWith("video") ? "video" : "image" });
+  } catch (err) {
+    res.status(500).json({ error: "Upload failed" });
+  }
+});
+
+// ── EDUCATION EXPORT ──────────────────────────────────────────────────────────
+
+// GET /api/projects/:id/education-export — HTML formatted for print-to-PDF
+// Returns a standalone HTML document with lesson plan, NGSS alignment, worksheet
+router.get("/projects/:id/education-export", async (req, res) => {
+  try {
+    const projectId = parseInt(String(req.params.id));
+    const [project] = await db.select({
+      title: projectsTable.title,
+      description: projectsTable.description,
+      category: projectsTable.category,
+      skillLevel: projectsTable.skillLevel,
+      estimatedTime: projectsTable.estimatedTime,
+      educationSection: projectsTable.educationSection,
+      buildGuideSection: projectsTable.buildGuideSection,
+      isPublic: projectsTable.isPublic,
+    }).from(projectsTable).where(eq(projectsTable.id, projectId)).limit(1);
+
+    if (!project) { res.status(404).send("Not found"); return; }
+
+    const edu = project.educationSection as any ?? {};
+    const guide = project.buildGuideSection as any ?? {};
+    const title = (project.title ?? "Untitled").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>${title} — Education Export</title>
+  <style>
+    body{font-family:Georgia,serif;max-width:800px;margin:40px auto;padding:0 20px;color:#111;line-height:1.6}
+    h1{font-size:2em;border-bottom:3px solid #10b981;padding-bottom:.4em;color:#064e3b}
+    h2{font-size:1.3em;color:#065f46;margin-top:2em;border-left:4px solid #10b981;padding-left:.6em}
+    h3{color:#047857}
+    .meta{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:1em 0}
+    .meta span{display:inline-block;margin-right:1em;font-size:.9em;color:#374151}
+    .section{background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:1.5em 0}
+    .worksheet{border:2px dashed #6b7280;border-radius:8px;padding:16px;margin:1em 0}
+    .answer-line{border-bottom:1px solid #9ca3af;margin:12px 0;min-height:28px}
+    pre{background:#1f2937;color:#f9fafb;border-radius:6px;padding:12px;overflow-x:auto;font-size:.8em}
+    @media print{body{margin:0}pre{white-space:pre-wrap}}
+  </style>
+</head>
+<body>
+  <h1>📐 ${title}</h1>
+  <div class="meta">
+    <span>📚 <strong>Category:</strong> ${(project.category ?? "").replace(/</g,"&lt;")}</span>
+    <span>🎯 <strong>Skill Level:</strong> ${(project.skillLevel ?? "").replace(/</g,"&lt;")}</span>
+    <span>⏱ <strong>Estimated Time:</strong> ${(project.estimatedTime ?? "N/A").replace(/</g,"&lt;")}</span>
+  </div>
+  ${project.description ? `<p>${project.description.replace(/</g,"&lt;")}</p>` : ""}
+
+  ${edu.lessonPlan ? `<h2>📖 Lesson Plan</h2><div class="section">${edu.lessonPlan.replace(/\n/g,"<br/>").replace(/</g,"&lt;")}</div>` : ""}
+  ${edu.learningObjectives ? `<h2>🎯 Learning Objectives</h2><ul>${(Array.isArray(edu.learningObjectives) ? edu.learningObjectives : [edu.learningObjectives]).map((o: string) => `<li>${String(o).replace(/</g,"&lt;")}</li>`).join("")}</ul>` : ""}
+  ${edu.ngssStandards ? `<h2>📋 NGSS Standards</h2><div class="section">${(Array.isArray(edu.ngssStandards) ? edu.ngssStandards.join(", ") : String(edu.ngssStandards)).replace(/</g,"&lt;")}</div>` : ""}
+  ${edu.teacherNotes ? `<h2>👩‍🏫 Teacher Notes</h2><div class="section">${edu.teacherNotes.replace(/\n/g,"<br/>").replace(/</g,"&lt;")}</div>` : ""}
+
+  <h2>📝 Student Worksheet</h2>
+  <div class="worksheet">
+    <p><strong>Name:</strong> <span class="answer-line"></span> &nbsp;&nbsp; <strong>Date:</strong> <span class="answer-line"></span></p>
+    ${edu.worksheetMarkdown ? edu.worksheetMarkdown.replace(/\n/g,"<br/>").replace(/</g,"&lt;") : `
+    <p><strong>Question 1:</strong> What engineering challenge does this project solve?</p>
+    <div class="answer-line"></div><div class="answer-line"></div>
+    <p><strong>Question 2:</strong> What materials or components are needed?</p>
+    <div class="answer-line"></div><div class="answer-line"></div>
+    <p><strong>Question 3:</strong> What safety precautions must you take?</p>
+    <div class="answer-line"></div><div class="answer-line"></div>
+    <p><strong>Reflection:</strong> What would you change if you built it again?</p>
+    <div class="answer-line"></div><div class="answer-line"></div>
+    `}
+  </div>
+
+  ${guide.steps && Array.isArray(guide.steps) ? `<h2>🔨 Build Steps (Teacher Reference)</h2><ol>${guide.steps.map((s: any) => `<li><strong>${String(s.title ?? "").replace(/</g,"&lt;")}</strong>: ${String(s.description ?? "").replace(/</g,"&lt;")}</li>`).join("")}</ol>` : ""}
+
+  <hr style="margin-top:3em;border-color:#e5e7eb"/>
+  <p style="font-size:.8em;color:#6b7280">Generated by MakerForge — AI-powered hardware project builder. For educational use only. Verify all designs before fabrication.</p>
+</body>
+</html>`;
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(project.title ?? "education-export")}.html"`);
+    res.send(html);
+  } catch (err) {
+    res.status(500).send("Export failed");
   }
 });
 

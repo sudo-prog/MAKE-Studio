@@ -1,2 +1,2 @@
-- [api-client-react rebuild](api-client-rebuild.md) — manual-hooks.ts added AFTER dist was built; must run `cd lib/api-client-react && pnpm tsc --build` to regenerate dist/*.d.ts so makerforge project-references see new exports
-- [Express/TS patterns](express-ts-patterns.md) — key patterns: Express 5 params need String(); noImplicitReturns needs res.json(); return; not return res.json(); onConflictDoUpdate needs unique index in DB
+- [OctoPrint SSRF guard](octoprint-ssrf.md) — DNS resolution check required in BOTH connect endpoint AND getOctoPrintAccount helper; LAN ranges allowed
+- [MakerForge code review conventions](makerforge-conventions.md) — noImplicitReturns pattern, Express 5 params, api-client-react rebuild requirement

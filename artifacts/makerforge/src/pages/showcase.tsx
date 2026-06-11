@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useUser } from "@clerk/react";
 import {
   useShowcase, useToggleShowcaseLike, useCreateShowcasePost,
   useShowcaseComments, useAddShowcaseComment, getShowcaseQueryKey,
-  getShowcaseCommentsQueryKey,
+  getShowcaseCommentsQueryKey, useShowcaseUpload,
 } from "@workspace/api-client-react";
 import { useListProjects } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -148,14 +148,36 @@ function CreatePostDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [caption, setCaption] = useState("");
-  const [mediaUrl, setMediaUrl] = useState("");
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [uploadPending, setUploadPending] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const { data: projectsData } = useListProjects({});
+  const upload = useShowcaseUpload();
   const create = useCreateShowcasePost({
     mutation: {
-      onSuccess: () => { setOpen(false); setCaption(""); setMediaUrl(""); setProjectId(""); onSuccess(); },
+      onSuccess: () => { setOpen(false); setCaption(""); setMediaPreview(null); setProjectId(""); onSuccess(); },
       onError: () => toast({ title: "Failed to post", variant: "destructive" }),
     },
   });
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadPending(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(",")[1];
+      try {
+        const result = await upload.mutateAsync({ filename: file.name, content: base64, mediaType: file.type.startsWith("video") ? "video" : "image" });
+        setMediaPreview(result.url);
+      } catch {
+        toast({ title: "Upload failed", variant: "destructive" });
+      } finally {
+        setUploadPending(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -181,17 +203,27 @@ function CreatePostDialog({ onSuccess }: { onSuccess: () => void }) {
             <Textarea placeholder="Tell the community about your build…" value={caption} onChange={(e) => setCaption(e.target.value)} rows={3} />
           </div>
           <div className="space-y-2">
-            <Label>Photo / Video URL (optional)</Label>
-            <Input placeholder="https://…" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} />
+            <Label>Photo / Video (optional)</Label>
+            <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleFileChange} />
+            <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => fileRef.current?.click()} disabled={uploadPending}>
+              {uploadPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+              {mediaPreview ? "Change File" : "Choose File"}
+            </Button>
+            {mediaPreview && (
+              <div className="relative mt-2 rounded-md overflow-hidden h-40 bg-muted">
+                <img src={mediaPreview} alt="preview" className="w-full h-full object-cover" />
+                <button className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 text-xs" onClick={() => setMediaPreview(null)}>✕</button>
+              </div>
+            )}
           </div>
           <Button
             className="w-full"
-            disabled={!projectId || create.isPending}
+            disabled={!projectId || create.isPending || uploadPending}
             onClick={() => create.mutate({
               projectId: parseInt(projectId),
               caption: caption || undefined,
-              mediaUrl: mediaUrl || undefined,
-              mediaType: mediaUrl ? "image" : undefined,
+              mediaUrl: mediaPreview || undefined,
+              mediaType: mediaPreview ? "image" : undefined,
             })}
           >
             {create.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Camera className="h-4 w-4 mr-2" />}

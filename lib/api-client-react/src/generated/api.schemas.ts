@@ -416,5 +416,8 @@ category?: string;
 export type GetPublicGalleryParams = {
 page?: number;
 category?: string;
+skillLevel?: string;
+search?: string;
+material?: string;
 };
 

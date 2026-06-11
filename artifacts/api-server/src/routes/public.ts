@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { projectsTable, affiliateClicksTable } from "@workspace/db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, ilike } from "drizzle-orm";
 
 const router = Router();
 
@@ -44,27 +44,40 @@ router.get("/public/projects/:slug", async (req, res) => {
 });
 
 // GET /api/public/gallery
+// Query params: page, category, skillLevel, search, material
 router.get("/public/gallery", async (req, res) => {
   try {
-    const page = parseInt(String(req.query.page ?? "1"));
+    const page = Math.max(1, parseInt(String(req.query.page ?? "1")));
     const limit = 20;
     const offset = (page - 1) * limit;
     const category = req.query.category ? String(req.query.category) : undefined;
+    const skillLevel = req.query.skillLevel ? String(req.query.skillLevel) : undefined;
+    const search = req.query.search ? String(req.query.search).slice(0, 100) : undefined;
+    const material = req.query.material ? String(req.query.material).slice(0, 50) : undefined;
 
-    const conditions = [eq(projectsTable.isPublic, true), eq(projectsTable.status, "ready")];
-    if (category) {
-      conditions.push(eq(projectsTable.category, category));
+    const conditions: ReturnType<typeof eq>[] = [
+      eq(projectsTable.isPublic, true) as any,
+      eq(projectsTable.status, "ready") as any,
+    ];
+    if (category) conditions.push(eq(projectsTable.category, category) as any);
+    if (skillLevel) conditions.push(eq(projectsTable.skillLevel, skillLevel as any) as any);
+    if (search) conditions.push(ilike(projectsTable.title, `%${search}%`) as any);
+    if (material) {
+      conditions.push(sql`lower(bom_section::text) like ${`%${material.toLowerCase()}%`}` as any);
     }
 
     const [items, countResult] = await Promise.all([
       db.select({
         id: projectsTable.id,
         title: projectsTable.title,
+        description: projectsTable.description,
         status: projectsTable.status,
         renderImageUrl: projectsTable.renderImageUrl,
         category: projectsTable.category,
+        skillLevel: projectsTable.skillLevel,
         estimatedCost: projectsTable.estimatedCost,
-        shareSlug: projectsTable.shareSlug,  // ← include shareSlug so gallery cards link correctly
+        estimatedTime: projectsTable.estimatedTime,
+        shareSlug: projectsTable.shareSlug,
         createdAt: projectsTable.createdAt,
         updatedAt: projectsTable.updatedAt,
       }).from(projectsTable)

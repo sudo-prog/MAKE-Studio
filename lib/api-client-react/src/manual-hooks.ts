@@ -507,6 +507,32 @@ export function useAffiliateEarnings<TData = AffiliateEarnings, TError = ErrorTy
   } as UseQueryOptions<AffiliateEarnings, TError, TData>);
 }
 
+// ── Challenge Winner (admin) ──────────────────────────────────────────────────
+
+export const setChallengeWinner = async (data: { challengeId: number; submissionId: number }): Promise<{ ok: boolean; winnerId?: number }> =>
+  customFetch<{ ok: boolean; winnerId?: number }>(`/api/challenges/${data.challengeId}/submissions/${data.submissionId}/winner`, { method: "POST" });
+
+export function useSetChallengeWinner<TError = ErrorType<unknown>>(
+  options?: { mutation?: UseMutationOptions<{ ok: boolean; winnerId?: number }, TError, { challengeId: number; submissionId: number }> },
+) {
+  const mutationFn: MutationFunction<{ ok: boolean; winnerId?: number }, { challengeId: number; submissionId: number }> =
+    (data) => setChallengeWinner(data);
+  return useMutation<{ ok: boolean; winnerId?: number }, TError, { challengeId: number; submissionId: number }>({ mutationFn, ...options?.mutation });
+}
+
+// ── Showcase Media Upload ─────────────────────────────────────────────────────
+
+export const showcaseUpload = async (data: { filename?: string; content: string; mediaType?: string }): Promise<{ url: string; mediaType: string }> =>
+  customFetch<{ url: string; mediaType: string }>("/api/showcase/upload", { method: "POST", body: JSON.stringify(data) });
+
+export function useShowcaseUpload<TError = ErrorType<unknown>>(
+  options?: { mutation?: UseMutationOptions<{ url: string; mediaType: string }, TError, { filename?: string; content: string; mediaType?: string }> },
+) {
+  const mutationFn: MutationFunction<{ url: string; mediaType: string }, { filename?: string; content: string; mediaType?: string }> =
+    (data) => showcaseUpload(data);
+  return useMutation<{ url: string; mediaType: string }, TError, { filename?: string; content: string; mediaType?: string }>({ mutationFn, ...options?.mutation });
+}
+
 // ── Admin Analytics ───────────────────────────────────────────────────────────
 
 export const getAdminAnalytics = async (): Promise<AdminAnalytics> =>

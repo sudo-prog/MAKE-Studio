@@ -30,9 +30,13 @@ export default function Gallery() {
   const [accumulated, setAccumulated] = useState<any[]>([]);
   const loaderRef = useRef<HTMLDivElement>(null);
 
+  // All filters are passed server-side; no client-side filtering needed
   const galleryParams = {
     page,
     ...(category ? { category } : {}),
+    ...(skillLevel ? { skillLevel } : {}),
+    ...(search ? { search } : {}),
+    ...(material ? { material } : {}),
   };
   const { data, isLoading, isFetching } = useGetPublicGallery(galleryParams, {
     query: { queryKey: getGetPublicGalleryQueryKey(galleryParams) },
@@ -60,15 +64,8 @@ export default function Gallery() {
     },
   });
 
-  // Client-side filter by search, skillLevel, and material keywords
-  const projects = accumulated.filter((p) => {
-    const desc = (p as any).description ?? "";
-    const matchSearch = !search || p.title?.toLowerCase().includes(search.toLowerCase()) || desc.toLowerCase().includes(search.toLowerCase());
-    const matchSkill = !skillLevel || (p as any).skillLevel === skillLevel;
-    const haystack = `${p.title ?? ""} ${desc} ${JSON.stringify((p as any).bomSection ?? {})}`.toLowerCase();
-    const matchMaterial = !material || haystack.includes(material.toLowerCase());
-    return matchSearch && matchSkill && matchMaterial;
-  });
+  // All filtering is server-side
+  const projects = accumulated;
 
   const handleSearch = () => {
     setSearch(searchInput);

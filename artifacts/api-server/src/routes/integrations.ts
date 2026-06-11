@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { createHmac, randomBytes, createCipheriv, createDecipheriv } from "crypto";
+import { promises as dnsPromises } from "dns";
 import { db } from "@workspace/db";
 import {
   connectedAccountsTable, projectsTable, usersTable,
@@ -303,6 +304,34 @@ router.post("/integrations/github/disconnect", requireDbUser, async (req, res) =
 // LAN private ranges (192.168.x, 10.x, 172.16-31.x) are intentionally allowed
 // because OctoPrint is inherently a LAN-resident device.
 
+/**
+ * DNS-based SSRF check — resolve the hostname and ensure it does not map to
+ * a loopback or link-local address. RFC-1918 LAN ranges are intentionally
+ * allowed since OctoPrint is a LAN device.
+ */
+async function resolveAndCheckHost(hostname: string): Promise<{ allowed: boolean; reason?: string }> {
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) || hostname.startsWith("[")) {
+    return { allowed: true };
+  }
+  try {
+    const result = await dnsPromises.lookup(hostname, { all: true });
+    for (const { address } of result) {
+      if (/^127\./.test(address) || address === "::1" || address === "::") {
+        return { allowed: false, reason: `Hostname resolves to loopback address ${address}` };
+      }
+      if (/^169\.254\./.test(address) || /^fe80:/i.test(address)) {
+        return { allowed: false, reason: `Hostname resolves to link-local address ${address}` };
+      }
+      if (address === "0.0.0.0") {
+        return { allowed: false, reason: "Hostname resolves to unspecified address" };
+      }
+    }
+  } catch {
+    // DNS resolution failure — let the outbound request fail naturally
+  }
+  return { allowed: true };
+}
+
 /** Shared helper: load and validate OctoPrint credentials from DB. */
 async function getOctoPrintAccount(userId: number): Promise<
   { octoprintUrl: string; apiKey: string; error?: never } |
@@ -318,6 +347,11 @@ async function getOctoPrintAccount(userId: number): Promise<
   const urlCheck = validateOctoPrintUrl(octoprintUrl);
   if (!urlCheck.valid) return { error: `Stored OctoPrint URL is invalid: ${urlCheck.reason}` };
 
+  // DNS-based SSRF: ensure stored hostname still resolves to an allowed address
+  const parsed = new URL(octoprintUrl);
+  const hostCheck = await resolveAndCheckHost(parsed.hostname);
+  if (!hostCheck.allowed) return { error: `SSRF guard: ${hostCheck.reason}` };
+
   const apiKey = safeDecrypt(account.accessToken);
   return { octoprintUrl, apiKey };
 }
@@ -329,9 +363,14 @@ router.post("/integrations/octoprint/connect", requireDbUser, async (req, res) =
     const { octoprintUrl, apiKey } = req.body;
     if (!octoprintUrl || !apiKey) { res.status(400).json({ error: "octoprintUrl and apiKey required" }); return; }
 
-    // SSRF guard — validate URL shape before any outbound request is ever made
+    // SSRF guard — static URL shape check
     const urlCheck = validateOctoPrintUrl(octoprintUrl);
     if (!urlCheck.valid) { res.status(400).json({ error: urlCheck.reason }); return; }
+
+    // SSRF guard — DNS resolution check (blocks hostnames aliased to loopback/link-local)
+    const parsedUrl = new URL(octoprintUrl);
+    const hostCheck = await resolveAndCheckHost(parsedUrl.hostname);
+    if (!hostCheck.allowed) { res.status(400).json({ error: `SSRF guard: ${hostCheck.reason}` }); return; }
 
     // Verify connectivity with a short timeout; reject if OctoPrint is unreachable
     const controller = new AbortController();
