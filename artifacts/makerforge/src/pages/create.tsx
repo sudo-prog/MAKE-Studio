@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useGenerateProject } from "@workspace/api-client-react";
+import { useUser } from "@clerk/react";
+import { useGenerateProject, useGenerateGuestProject, GuestGenerateResult } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,6 +12,16 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, Terminal, Settings2, Cpu, CheckCircle, ImagePlus, X, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+function getOrCreateGuestId(): string {
+  const key = "mf_guest_id";
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
 
 const GENERATION_STEPS = [
   "Analyzing hardware requirements...",
@@ -280,10 +291,14 @@ function AdaptiveQuestionnaire({
 
 export default function CreateProject() {
   const { toast } = useToast();
+  const { isSignedIn } = useUser();
   const generateMutation = useGenerateProject();
+  const guestMutation = useGenerateGuestProject();
   const [prompt, setPrompt] = useState("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [generatingId, setGeneratingId] = useState<number | null>(null);
+
+  const isPending = generateMutation.isPending || guestMutation.isPending;
 
   const doGenerate = useCallback((data: Record<string, string>) => {
     const fullPrompt = [
@@ -296,6 +311,26 @@ export default function CreateProject() {
       return;
     }
 
+    const onError = (err: any) => {
+      const isLimit = err?.data?.upgradeRequired;
+      toast({
+        title: isLimit ? "Daily limit reached" : "Generation failed",
+        description: isLimit
+          ? (isSignedIn ? "Upgrade to Pro for unlimited generations." : "Sign up to forge more projects.")
+          : (err?.data?.error ?? "Failed to start. Check your AI key is configured."),
+        variant: "destructive",
+      });
+    };
+
+    if (!isSignedIn) {
+      const guestId = getOrCreateGuestId();
+      guestMutation.mutate({ guestId, data: { prompt: fullPrompt, category: data.category, skillLevel: data.skillLevel, imageUrl: imageUrl ?? null } }, {
+        onSuccess: (result: GuestGenerateResult) => setGeneratingId(result.id),
+        onError,
+      });
+      return;
+    }
+
     generateMutation.mutate({
       data: {
         prompt: fullPrompt,
@@ -305,17 +340,10 @@ export default function CreateProject() {
         imageUrl: imageUrl ?? undefined,
       },
     }, {
-      onSuccess: (data) => setGeneratingId(data.id!),
-      onError: (err: any) => {
-        const isLimit = err?.data?.upgradeRequired;
-        toast({
-          title: isLimit ? "Daily limit reached" : "Generation failed",
-          description: isLimit ? "Upgrade to Pro for unlimited generations." : (err?.data?.error ?? "Failed to start. Check your AI key is configured."),
-          variant: "destructive",
-        });
-      },
+      onSuccess: (result) => setGeneratingId(result.id!),
+      onError,
     });
-  }, [prompt, imageUrl, generateMutation, toast]);
+  }, [prompt, imageUrl, isSignedIn, generateMutation, guestMutation, toast]);
 
   if (generatingId !== null) {
     return (
@@ -360,11 +388,11 @@ export default function CreateProject() {
               <p className="text-xs text-muted-foreground">1 Forge Credit per generation</p>
               <Button
                 onClick={() => doGenerate({ description: prompt })}
-                disabled={generateMutation.isPending || !prompt.trim()}
+                disabled={isPending || !prompt.trim()}
                 className="font-semibold"
               >
                 <Sparkles className="mr-2 h-4 w-4" />
-                {generateMutation.isPending ? "Starting..." : "Forge Project"}
+                {isPending ? "Starting..." : "Forge Project"}
               </Button>
             </CardFooter>
           </Card>
@@ -378,7 +406,7 @@ export default function CreateProject() {
               <CardDescription>Answer a few questions and MakerForge will build the perfect prompt for you.</CardDescription>
             </CardHeader>
             <CardContent>
-              <AdaptiveQuestionnaire onSubmit={doGenerate} disabled={generateMutation.isPending} />
+              <AdaptiveQuestionnaire onSubmit={doGenerate} disabled={isPending} />
             </CardContent>
           </Card>
         </TabsContent>

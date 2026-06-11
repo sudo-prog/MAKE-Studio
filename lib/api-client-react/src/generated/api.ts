@@ -1101,6 +1101,72 @@ export const useGenerateProject = <TError = ErrorType<void>,
       return useMutation(getGenerateProjectMutationOptions(options));
     }
 
+// ── GUEST GENERATION (no auth) ────────────────────────────────────────────
+
+export const getGenerateGuestProjectUrl = () => `/api/generate/guest`;
+
+export interface GuestGenerateInput {
+  prompt: string;
+  category?: string | null;
+  skillLevel?: string | null;
+  imageUrl?: string | null;
+}
+export interface GuestGenerateResult {
+  id: number;
+  status: string;
+  isGuest: boolean;
+  createdAt: string;
+}
+
+export const generateGuestProject = async (
+  guestId: string,
+  input: GuestGenerateInput,
+  options?: RequestInit
+): Promise<GuestGenerateResult> => {
+  return customFetch<GuestGenerateResult>(getGenerateGuestProjectUrl(), {
+    ...options,
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-guest-id": guestId,
+      ...options?.headers,
+    },
+    body: JSON.stringify(input),
+  });
+};
+
+export const useGenerateGuestProject = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof generateGuestProject>>,
+      TError,
+      { guestId: string; data: GuestGenerateInput },
+      TContext
+    >;
+  }
+): UseMutationResult<
+  Awaited<ReturnType<typeof generateGuestProject>>,
+  TError,
+  { guestId: string; data: GuestGenerateInput },
+  TContext
+> => {
+  const mutationKey = ["generateGuestProject"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateGuestProject>>,
+    { guestId: string; data: GuestGenerateInput }
+  > = ({ guestId, data }) => generateGuestProject(guestId, data);
+
+  return useMutation({ mutationFn, ...mutationOptions });
+};
+
+// ── END GUEST ─────────────────────────────────────────────────────────────
+
 export const getRefineProjectSectionUrl = (projectId: number,) => {
 
 

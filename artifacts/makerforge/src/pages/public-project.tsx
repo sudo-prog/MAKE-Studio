@@ -68,9 +68,9 @@ export default function PublicProject() {
               </Link>
             </Button>
             <Button asChild size="sm">
-              <Link href={`/api/projects/${(project as any).id}/export`}>
+              <a href={`/api/share/${(project as any).shareSlug}/export`} download>
                 <Download className="h-4 w-4 mr-1" />Download ZIP
-              </Link>
+              </a>
             </Button>
           </div>
         </div>

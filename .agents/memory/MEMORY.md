@@ -1,3 +1,6 @@
 - [Clerk dev vs prod proxy](clerk-proxy-dev-prod.md) — clerkProxyUrl must be undefined in dev (pk_test_* keys load direct from CDN); only set proxyUrl in prod.
 - [API hooks queryKey pattern](api-hooks-querykey.md) — orval-generated hooks require queryKey in UseQueryOptions; always pass matching getXxxQueryKey() alongside enabled.
 - [MakerForge stack](makerforge-stack.md) — core architecture decisions: Express 5 + Drizzle + Clerk + Stripe + OpenAI-compatible AI, sections stored as jsonb blobs in projects table.
+- [api-client-react rebuild](api-client-react-rebuild.md) — composite:true package must be rebuilt with tsc after editing source; TS consumers see stale declarations from dist/ until rebuilt.
+- [Clerk React import path](clerk-react-imports.md) — Replit Clerk uses @clerk/react (not @clerk/clerk-react); use useUser() for isSignedIn.
+- [Three.js multiple instances](three-js-imports.md) — use `import type { BufferGeometry }` + geometry built-ins (computeBoundingBox) to avoid runtime duplicate-Three.js warning from R3F.
