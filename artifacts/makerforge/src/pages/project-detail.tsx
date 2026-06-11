@@ -17,6 +17,8 @@ import {
   useRestoreVersion,
   useSnapshotVersion,
   getProjectVersionsQueryKey,
+  useGetMe,
+  usePatchMe,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -269,6 +271,57 @@ function RefineBar({ projectId, section }: { projectId: number; section: RefineI
         {refine.isPending ? "Refining..." : "Refine"}
       </Button>
       <Button size="sm" variant="ghost" className="h-8" onClick={() => setOpen(false)}>Cancel</Button>
+    </div>
+  );
+}
+
+// --- Education Mode Prompt ---
+function EduModePrompt() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data: me } = useGetMe();
+  const patch = usePatchMe({
+    mutation: {
+      onSuccess: (updated) => {
+        queryClient.invalidateQueries({ queryKey: ["/api/users/me"] });
+        if (updated.educationMode) {
+          toast({ title: "Education Mode enabled!", description: "Regenerate the Education Pack section to populate lesson plans and worksheets." });
+        } else {
+          toast({ title: "Education Mode disabled." });
+        }
+      },
+    },
+  });
+
+  const enabled = (me as any)?.educationMode ?? false;
+
+  return (
+    <div className="text-center py-8 text-muted-foreground space-y-4">
+      <BookOpen className="h-10 w-10 mx-auto opacity-30" />
+      {enabled ? (
+        <>
+          <p className="text-sm">Education Mode is <span className="text-emerald-400 font-medium">enabled</span>. Use the "Refine" button above to generate lesson plans, NGSS alignments, and worksheets for this project.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => patch.mutate({ educationMode: false })}
+            disabled={patch.isPending}
+          >
+            Disable Education Mode
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="text-sm">Enable Education Mode to generate lesson plans, NGSS alignments, and student worksheets for this project.</p>
+          <Button
+            size="sm"
+            onClick={() => patch.mutate({ educationMode: true })}
+            disabled={patch.isPending}
+          >
+            <BookOpen className="h-3.5 w-3.5 mr-1.5" />Enable Education Mode
+          </Button>
+        </>
+      )}
     </div>
   );
 }
@@ -770,10 +823,7 @@ export default function ProjectDetail() {
                     )}
                   </>
                 ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <BookOpen className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">Enable Education Mode in your profile to generate lesson plans, NGSS alignments, and worksheets.</p>
-                  </div>
+                  <EduModePrompt />
                 )}
               </CardContent>
             </Card>

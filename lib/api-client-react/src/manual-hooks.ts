@@ -34,6 +34,20 @@ export interface OctoPrintStatus {
   version?: string;
   job?: unknown;
   printer?: unknown;
+  files?: string[];
+}
+
+export interface ShareCard {
+  title: string;
+  description?: string;
+  category?: string;
+  skillLevel?: string;
+  estimatedCost?: string;
+  estimatedTime?: string;
+  shareUrl: string;
+  tags: string[];
+  affiliateHighlights: { name: string; supplier: string; price?: string; affiliateUrl?: string }[];
+  ogImageUrl?: string;
 }
 
 export interface MakerspaceResult {
@@ -134,6 +148,19 @@ export interface AdminAnalytics {
   clicksBySupplier: { supplier: string; count: number }[];
 }
 
+// ── User Settings ─────────────────────────────────────────────────────────────
+
+export const patchMe = async (data: { displayName?: string; educationMode?: boolean }): Promise<{ id: number; educationMode?: boolean; displayName?: string }> =>
+  customFetch("/api/users/me", { method: "PATCH", body: JSON.stringify(data) });
+
+export function usePatchMe<TError = ErrorType<unknown>>(
+  options?: { mutation?: UseMutationOptions<{ id: number; educationMode?: boolean; displayName?: string }, TError, { displayName?: string; educationMode?: boolean }> },
+) {
+  const mutationFn: MutationFunction<{ id: number; educationMode?: boolean; displayName?: string }, { displayName?: string; educationMode?: boolean }> =
+    (data) => patchMe(data);
+  return useMutation<{ id: number; educationMode?: boolean; displayName?: string }, TError, { displayName?: string; educationMode?: boolean }>({ mutationFn, ...options?.mutation });
+}
+
 // ── GitHub ───────────────────────────────────────────────────────────────────
 
 export const getGitHubStatus = async (): Promise<GitHubStatus> =>
@@ -198,6 +225,35 @@ export function useOctoPrintConnect<TError = ErrorType<unknown>>(
 ) {
   const mutationFn: MutationFunction<{ ok: boolean }, { octoprintUrl: string; apiKey: string }> = (data) => octoprintConnect(data);
   return useMutation<{ ok: boolean }, TError, { octoprintUrl: string; apiKey: string }>({ mutationFn, ...options?.mutation });
+}
+
+export const octoprintStartPrint = async (filename: string): Promise<{ ok: boolean; printing: string }> =>
+  customFetch("/api/integrations/octoprint/start-print", { method: "POST", body: JSON.stringify({ filename }) });
+
+export function useOctoPrintStartPrint<TError = ErrorType<unknown>>(
+  options?: { mutation?: UseMutationOptions<{ ok: boolean; printing: string }, TError, string> },
+) {
+  const mutationFn: MutationFunction<{ ok: boolean; printing: string }, string> = (filename) => octoprintStartPrint(filename);
+  return useMutation<{ ok: boolean; printing: string }, TError, string>({ mutationFn, ...options?.mutation });
+}
+
+// ── Share Card ────────────────────────────────────────────────────────────────
+
+export const getProjectShareCard = async (id: number): Promise<ShareCard> =>
+  customFetch<ShareCard>(`/api/projects/${id}/share-card`);
+
+export const getProjectShareCardQueryKey = (id: number) => ["/api/projects/share-card", id] as const;
+
+export function useProjectShareCard<TData = ShareCard, TError = ErrorType<unknown>>(
+  id: number,
+  options?: { query?: UseQueryOptions<ShareCard, TError, TData> },
+) {
+  return useQuery<ShareCard, TError, TData>({
+    queryKey: getProjectShareCardQueryKey(id),
+    queryFn: () => getProjectShareCard(id),
+    enabled: id > 0,
+    ...options?.query,
+  } as UseQueryOptions<ShareCard, TError, TData>);
 }
 
 // ── Makerspace Search ─────────────────────────────────────────────────────────

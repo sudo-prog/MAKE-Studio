@@ -462,4 +462,49 @@ router.get("/affiliate/earnings", requireDbUser, async (req, res) => {
   }
 });
 
+// ── SHARE CARD (OG metadata + affiliate highlights) ────────────────────────────
+
+// GET /api/projects/:id/share-card
+router.get("/projects/:id/share-card", async (req, res) => {
+  try {
+    const projectId = parseInt(String(req.params.id));
+    const [project] = await db.select().from(projectsTable).where(
+      eq(projectsTable.id, projectId)
+    ).limit(1);
+    if (!project || !project.isPublic) {
+      res.status(404).json({ error: "Project not found or not public" });
+      return;
+    }
+
+    const shareUrl = project.shareSlug
+      ? `${process.env.APP_BASE_URL ?? ""}/share/${project.shareSlug}`
+      : `${process.env.APP_BASE_URL ?? ""}/projects/${project.id}`;
+
+    // Extract top BOM items with affiliate links for sharing
+    const bom = project.bomSection as any;
+    const items: any[] = bom?.tiers?.balanced ?? bom?.tiers?.budget ?? [];
+    const affiliateHighlights = items.slice(0, 5).map((item: any) => ({
+      name: item.name,
+      supplier: item.supplier ?? "Amazon",
+      price: item.estimatedPrice,
+      affiliateUrl: item.affiliateUrl ?? null,
+    }));
+
+    res.json({
+      title: project.title,
+      description: project.description ?? project.prompt?.slice(0, 200),
+      category: project.category,
+      skillLevel: project.skillLevel,
+      estimatedCost: project.estimatedCost,
+      estimatedTime: project.estimatedTime,
+      shareUrl,
+      tags: [project.category, project.skillLevel].filter(Boolean),
+      affiliateHighlights,
+      ogImageUrl: null, // Placeholder — can be replaced with a real OG image generator
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to get share card" });
+  }
+});
+
 export default router;

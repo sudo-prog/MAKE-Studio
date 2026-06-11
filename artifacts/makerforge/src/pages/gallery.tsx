@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 
 const CATEGORIES = ["All", "Energy", "IoT", "Robotics", "Lighting", "Accessibility", "CNC", "Electronics", "Mechanical"];
 const SKILL_LEVELS = ["All", "Beginner", "Intermediate", "Advanced"];
+const MATERIALS = ["All", "PLA", "PETG", "ABS", "Resin", "PCB", "Metal", "Wood", "Fabric"];
 
 export default function Gallery() {
   const { isSignedIn } = useUser();
@@ -21,6 +22,7 @@ export default function Gallery() {
 
   const [category, setCategory] = useState<string | undefined>(undefined);
   const [skillLevel, setSkillLevel] = useState<string | undefined>(undefined);
+  const [material, setMaterial] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
@@ -43,12 +45,15 @@ export default function Gallery() {
     },
   });
 
-  // Client-side filter by search + skillLevel since these aren't in the backend query
+  // Client-side filter by search, skillLevel, and material keywords
   const allProjects = data?.items ?? [];
   const projects = allProjects.filter((p) => {
-    const matchSearch = !search || p.title?.toLowerCase().includes(search.toLowerCase());
+    const desc = (p as any).description ?? "";
+    const matchSearch = !search || p.title?.toLowerCase().includes(search.toLowerCase()) || desc.toLowerCase().includes(search.toLowerCase());
     const matchSkill = !skillLevel || (p as any).skillLevel === skillLevel;
-    return matchSearch && matchSkill;
+    const haystack = `${p.title ?? ""} ${desc} ${JSON.stringify((p as any).bomSection ?? {})}`.toLowerCase();
+    const matchMaterial = !material || haystack.includes(material.toLowerCase());
+    return matchSearch && matchSkill && matchMaterial;
   });
 
   const handleSearch = () => {
@@ -59,13 +64,14 @@ export default function Gallery() {
   const clearFilters = () => {
     setCategory(undefined);
     setSkillLevel(undefined);
+    setMaterial(undefined);
     setSearch("");
     setSearchInput("");
     setPage(1);
     queryClient.invalidateQueries({ queryKey: getGetPublicGalleryQueryKey({}) });
   };
 
-  const hasFilters = !!category || !!skillLevel || !!search;
+  const hasFilters = !!category || !!skillLevel || !!material || !!search;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -109,7 +115,7 @@ export default function Gallery() {
       </div>
 
       {/* Skill level filter */}
-      <div className="flex gap-2 flex-wrap mb-8">
+      <div className="flex gap-2 flex-wrap mb-3">
         {SKILL_LEVELS.map((lvl) => (
           <Button
             key={lvl}
@@ -119,6 +125,22 @@ export default function Gallery() {
             onClick={() => { setSkillLevel(lvl === "All" ? undefined : lvl); setPage(1); }}
           >
             {lvl}
+          </Button>
+        ))}
+      </div>
+
+      {/* Material filter */}
+      <div className="flex gap-2 flex-wrap mb-8 items-center">
+        <span className="text-xs text-muted-foreground font-mono uppercase mr-1">Material:</span>
+        {MATERIALS.map((mat) => (
+          <Button
+            key={mat}
+            variant={material === mat || (mat === "All" && !material) ? "secondary" : "ghost"}
+            size="sm"
+            className="text-xs h-7"
+            onClick={() => { setMaterial(mat === "All" ? undefined : mat); setPage(1); }}
+          >
+            {mat}
           </Button>
         ))}
       </div>

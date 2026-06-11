@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useGitHubStatus, useGitHubDisconnect, useGitHubPush, useOctoPrintStatus, useOctoPrintConnect, useSearchMakerspaces } from "@workspace/api-client-react";
+import { useGitHubStatus, useGitHubDisconnect, useGitHubPush, useOctoPrintStatus, useOctoPrintConnect, useOctoPrintStartPrint, useSearchMakerspaces } from "@workspace/api-client-react";
 import { useListProjects } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,6 +46,13 @@ export default function IntegrationHub() {
   const { data: opStatus, isLoading: opLoading } = useOctoPrintStatus();
   const [opUrl, setOpUrl] = useState("");
   const [opKey, setOpKey] = useState("");
+  const [selectedFile, setSelectedFile] = useState("");
+  const opStartPrint = useOctoPrintStartPrint({
+    mutation: {
+      onSuccess: (data) => toast({ title: `Printing ${data.printing}` }),
+      onError: () => toast({ title: "Failed to start print", variant: "destructive" }),
+    },
+  });
   const opConnect = useOctoPrintConnect({
     mutation: {
       onSuccess: () => {
@@ -190,7 +197,28 @@ export default function IntegrationHub() {
                     <pre className="text-xs text-foreground overflow-auto max-h-24">{JSON.stringify(opStatus.job, null, 2)}</pre>
                   </div>
                 )}
-                <p className="text-xs text-muted-foreground">Upload GCODE from your project export, then slice and start from OctoPrint's web UI.</p>
+                {opStatus.files && opStatus.files.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-mono text-muted-foreground uppercase">Files on printer</p>
+                    <div className="rounded-lg border border-border/50 bg-secondary/10 divide-y divide-border/30">
+                      {opStatus.files.map((f) => (
+                        <div key={f} className="flex items-center justify-between px-3 py-2">
+                          <span className="text-xs text-foreground font-mono truncate flex-1">{f}</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs ml-2 shrink-0 gap-1"
+                            disabled={opStartPrint.isPending}
+                            onClick={() => opStartPrint.mutate(f)}
+                          >
+                            <Printer className="h-3 w-3" />Print
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">Export your project ZIP to get the GCODE file, then upload via the OctoPrint web UI.</p>
               </div>
             )}
           </CardContent>
