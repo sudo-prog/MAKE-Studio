@@ -12,8 +12,15 @@ import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { setBaseUrl } from "@workspace/api-client-react";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+
+// Set absolute base URL so Expo can reach the API server (outside web proxy)
+const apiUrl = process.env.EXPO_PUBLIC_DOMAIN;
+if (apiUrl) {
+  setBaseUrl(`https://${apiUrl}`);
+}
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();

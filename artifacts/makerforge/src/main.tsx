@@ -1,15 +1,21 @@
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { setBaseUrl } from "@workspace/api-client-react";
 
-const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-setBaseUrl(`${base}/api`);
+// Configure API base URL from environment
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
+setBaseUrl(apiBaseUrl || null);
 
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register(`${base}/sw.js`).catch(() => {});
-  });
+const rootElement = document.getElementById("root");
+
+if (!rootElement) {
+  throw new Error("Root element #root not found");
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(rootElement).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
