@@ -1,10 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter @workspace/makerforge run build",
+  "buildCommand": "cd artifacts/makerforge && pnpm build",
+  "installCommand": "pnpm install",
   "outputDirectory": "artifacts/makerforge/dist/public",
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  "framework": "vite",
+  "env": {
+    "BASE_PATH": "/"
+  }
 }
