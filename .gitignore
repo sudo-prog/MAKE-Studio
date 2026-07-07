@@ -41,6 +41,9 @@ testem.log
 .DS_Store
 Thumbs.db
 
+# Vercel
+.vercel
+
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md
 
