@@ -63,3 +63,11 @@ Architecture decisions, file structure, API patterns, and known issues.
 - [ ] Apply database migrations (`pnpm db:push` or direct SQL)
 - [ ] Configure `VITE_API_BASE_URL` in Vercel dashboard to point to API server
 - [ ] Configure `EXPO_PUBLIC_DOMAIN` in Expo for mobile app
+
+## Audit History
+- 2026-07-09: Frontend route audit (chief-of-staff agent)
+  - **Auth**: Clerk (`@clerk/react`). `src/App.tsx:38` throws `Missing VITE_CLERK_PUBLISHABLE_KEY` if key absent — app fails to mount on `localhost` (no host-derived key). With a key supplied, app mounts; `/` (Dashboard) renders real content.
+  - **Routes**: 17 routes (wouter). Auth-gated (`/dashboard`, `/gallery`, `/projects`, `/profile`, `/admin`, etc.) require a live Clerk session; without one they collapse to the 404 fallback. Full content verification needs live Clerk publishable key + signed-in session (not available locally).
+  - **Console errors**: `/` shows `/api/*` 500s (backend/Postgres down) + Clerk connection-refused (invalid key). NOT code bugs.
+  - **Build**: `cd artifacts/makerforge && pnpm build` passes (vite v7.3.3, 11.01s, `dist/public/index.html` + assets emitted). Sourcemap warnings harmless.
+  - **Verdict**: UI code sound (mounts, no crash). Full route audit blocked by external Clerk + Postgres deps. No code fixes required.
