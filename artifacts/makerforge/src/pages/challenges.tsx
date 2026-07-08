@@ -81,7 +81,7 @@ function ChallengeCard({ challenge }: { challenge: Challenge }) {
 
   return (
     <Card className="border-border/60 overflow-hidden">
-      <div className={`h-1.5 ${challenge.isActive ? "bg-gradient-to-r from-primary to-cyan-400" : "bg-secondary"}`} />
+      <div className={`h-1.5 ${challenge.isActive ? "bg-primary" : "bg-secondary"}`} />
       <CardHeader className="pb-3">
         <div className="flex items-start gap-3">
           <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">

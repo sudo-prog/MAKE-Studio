@@ -93,7 +93,7 @@ function ShowcaseCard({ post, isSignedIn }: { post: ShowcasePost; isSignedIn: bo
           {post.mediaType === "video" ? (
             <video src={post.mediaUrl} className="w-full h-full object-cover" controls />
           ) : (
-            <img src={post.mediaUrl} alt={post.caption ?? ""} className="w-full h-full object-cover" />
+            <img src={post.mediaUrl} alt={post.caption || "Shared showcase media"} className="w-full h-full object-cover" />
           )}
         </div>
       )}
@@ -212,7 +212,7 @@ function CreatePostDialog({ onSuccess }: { onSuccess: () => void }) {
             {mediaPreview && (
               <div className="relative mt-2 rounded-md overflow-hidden h-40 bg-muted">
                 <img src={mediaPreview} alt="preview" className="w-full h-full object-cover" />
-                <button className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 text-xs" onClick={() => setMediaPreview(null)}>✕</button>
+                <button aria-label="Remove selected media" className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 text-xs" onClick={() => setMediaPreview(null)}>✕</button>
               </div>
             )}
           </div>

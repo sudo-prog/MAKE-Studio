@@ -86,8 +86,8 @@ export function Layout({ children }: { children: ReactNode }) {
                 <Settings className="h-3 w-3" /> Settings
               </Link>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => signOut({ redirectUrl: "/" })} title="Sign Out">
-              <LogOut className="h-4 w-4 text-muted-foreground" />
+            <Button variant="ghost" size="icon" onClick={() => signOut({ redirectUrl: "/" })} aria-label="Sign Out" title="Sign Out">
+              <LogOut className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
             </Button>
           </div>
         </div>
@@ -96,7 +96,7 @@ export function Layout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-background md:flex-row">
+    <div className="flex min-h-dvh w-full flex-col bg-background md:flex-row">
       {/* Desktop Sidebar */}
       <div className="hidden w-64 shrink-0 md:block">
         <SidebarContent />

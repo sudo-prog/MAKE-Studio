@@ -108,8 +108,8 @@ export default function Gallery() {
         </div>
         <Button onClick={handleSearch}>Search</Button>
         {hasFilters && (
-          <Button variant="ghost" size="icon" onClick={clearFilters} title="Clear filters">
-            <X className="h-4 w-4" />
+          <Button variant="ghost" size="icon" onClick={clearFilters} aria-label="Clear filters" title="Clear filters">
+            <X className="h-4 w-4" aria-hidden="true" />
           </Button>
         )}
       </div>
